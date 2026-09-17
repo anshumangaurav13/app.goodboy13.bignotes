@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle drop shadow under the notebook sheet -->
+    <path
+        android:fillColor="#1F000000"
+        android:pathData="M30,26 L78,26 A6,6 0 0,1 84,32 L84,82 A6,6 0 0,1 78,88 L30,88 A6,6 0 0,1 24,82 L24,32 A6,6 0 0,1 30,26 Z" />
+
+    <!-- Notebook Paper Sheet -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M29,24 L77,24 A6,6 0 0,1 83,30 L83,80 A6,6 0 0,1 77,86 L29,86 A6,6 0 0,1 23,80 L23,30 A6,6 0 0,1 29,24 Z" />
+
+    <!-- Warm Left Accent / Notebook Spine Ribbon -->
+    <path
+        android:fillColor="#E6A868"
+        android:pathData="M23,30 L23,80 A6,6 0 0,0 29,86 L32,86 L32,24 L29,24 A6,6 0 0,0 23,30 Z" />
+
+    <!-- Faint Horizontal Notebook Ruled Lines -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#E8E2D5"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M38,36 L75,36" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#E8E2D5"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M38,46 L75,46" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#E8E2D5"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M38,56 L75,56" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#E8E2D5"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M38,66 L75,66" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#E8E2D5"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M38,76 L75,76" />
+
+    <!-- Expressive Calligraphic Ink Stroke forming the BigNotes "B" -->
+    <path
+        android:fillColor="#1E232A"
+        android:pathData="M40,36 C40,36 43,33 49,33 C55,33 58,37 58,42 C58,46 54,49 48,49 C55,49 61,52 61,59 C61,67 53,71 45,71 C41,71 39,69 39,69 L41,64 C41,64 43,66 46,66 C50,66 55,63 55,59 C55,54 50,52 44,52 L42,52 L42,47 L45,47 C49,47 53,45 53,41 C53,37 49,36 46,36 C43,36 41,37 41,37 Z" />
+
+    <!-- BigNotes Fountain Pen Nib (Angled precision drawing) -->
+    <!-- Gold/Brass Nib Body -->
+    <path
+        android:fillColor="#D9822B"
+        android:pathData="M66,60 L78,48 L86,56 L74,68 Z" />
+
+    <path
+        android:fillColor="#F4B05C"
+        android:pathData="M66,60 L72,54 L80,62 L74,68 Z" />
+
+    <!-- Tapered Nib Tip -->
+    <path
+        android:fillColor="#C06C18"
+        android:pathData="M66,60 L74,68 L60,74 Z" />
+
+    <path
+        android:fillColor="#F4B05C"
+        android:pathData="M66,60 L68,62 L60,74 Z" />
+
+    <!-- Nib Point & Ink Slit -->
+    <path
+        android:fillColor="#1E232A"
+        android:pathData="M60,74 L59,75 L61,73 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1E232A"
+        android:strokeWidth="0.8"
+        android:pathData="M60,74 L68,66" />
+    <!-- Breather Hole -->
+    <path
+        android:fillColor="#1E232A"
+        android:pathData="M68,66 A1.2,1.2 0 1,0 68,63.6 A1.2,1.2 0 1,0 68,66 Z" />
+
+</vector>
