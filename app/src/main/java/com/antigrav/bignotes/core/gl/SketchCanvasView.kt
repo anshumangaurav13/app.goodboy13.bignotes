@@ -560,6 +560,19 @@ class SketchCanvasView @JvmOverloads constructor(
         onScrollActiveChanged?.invoke(false)
     }
 
+    /**
+     * Programmatically scrolls the canvas to position targetWorldY in the upper third of the viewport.
+     */
+    fun scrollToWorldY(targetWorldY: Float) {
+        val effScale = (renderer.zoomScale * renderer.pageScale).coerceAtLeast(0.001f)
+        val viewH = if (height > 0) height.toFloat() else (if (renderer.currentViewWidth > 0f) renderer.currentViewWidth * 1.5f else 1800f)
+        val targetScreenOffset = viewH * 0.25f
+        renderer.panY = (-targetWorldY * effScale + targetScreenOffset).coerceAtMost(0f)
+        syncCurrentPageStateFromRenderer()
+        requestRedraw()
+        onViewportChanged?.invoke(renderer.zoomScale, renderer.panX, renderer.panY, renderer.rotationDegrees)
+    }
+
     init {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             isAutoHandwritingEnabled = false

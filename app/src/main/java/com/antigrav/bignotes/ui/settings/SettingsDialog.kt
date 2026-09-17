@@ -83,6 +83,12 @@ enum class SettingsCategory(
         "Auto-snapshot, backup folder, timeline",
         Icons.Default.Folder,
         Color(0xFF10B981)
+    ),
+    HANDWRITING(
+        "Handwriting & Search",
+        "Offline recognition model, search index",
+        Icons.Default.Search,
+        Color(0xFF8B5CF6)
     )
 }
 
@@ -118,6 +124,8 @@ fun SettingsDialog(
     onRestoreClicked: () -> Unit = {},
     autoBackupEnabled: Boolean = true,
     onAutoBackupEnabledChange: (Boolean) -> Unit = {},
+    modelDownloadStatus: com.antigrav.bignotes.core.search.model.ModelDownloadStatus = com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Ready,
+    onDownloadModel: (() -> Unit)? = null,
     initialCategory: SettingsCategory? = null,
     onDismiss: () -> Unit
 ) {
@@ -354,6 +362,10 @@ fun SettingsDialog(
                                     onRestoreClicked = onRestoreClicked,
                                     autoBackupEnabled = autoBackupEnabled,
                                     onAutoBackupEnabledChange = onAutoBackupEnabledChange
+                                )
+                                SettingsCategory.HANDWRITING -> HandwritingDetail(
+                                    modelStatus = modelDownloadStatus,
+                                    onDownloadModel = onDownloadModel
                                 )
                             }
                         }
@@ -1059,6 +1071,103 @@ private fun BackupDetail(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
+        }
+    }
+}
+
+@Composable
+private fun HandwritingDetail(
+    modelStatus: com.antigrav.bignotes.core.search.model.ModelDownloadStatus,
+    onDownloadModel: (() -> Unit)?
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(
+            text = "Offline Handwriting Engine",
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF8B5CF6)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "English Model (en-US)",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        Text(
+                            text = when (modelStatus) {
+                                is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Ready -> "Ready • 100% Offline"
+                                is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Downloading -> "Downloading model pack (~20MB)..."
+                                is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.NotDownloaded -> "Not downloaded (~20MB)"
+                                is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Failed -> "Download failed: ${(modelStatus as com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Failed).message}"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = when (modelStatus) {
+                                is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Ready -> Color(0xFF10B981)
+                                is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Downloading -> MaterialTheme.colorScheme.primary
+                                is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Failed -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            }
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Enables full-text handwriting search directly from the Notes sidebar. Handwriting is indexed on-device with zero cloud dependencies or latency.",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+
+                when (modelStatus) {
+                    is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.NotDownloaded,
+                    is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Failed -> {
+                        Button(
+                            onClick = { onDownloadModel?.invoke() },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(36.dp)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Download Model (~20MB)", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Downloading -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Downloading language pack...", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    is com.antigrav.bignotes.core.search.model.ModelDownloadStatus.Ready -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Model ready for handwriting search", style = MaterialTheme.typography.bodySmall, color = Color(0xFF10B981))
+                        }
+                    }
+                }
+            }
         }
     }
 }

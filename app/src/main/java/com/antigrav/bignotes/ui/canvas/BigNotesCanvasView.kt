@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,7 +23,9 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.antigrav.bignotes.core.export.PageFormat
 import com.antigrav.bignotes.core.export.PdfPagePaginator
@@ -62,6 +65,8 @@ fun BigNotesCanvasView(
     onPenContactChanged: ((Boolean) -> Unit)? = null,
     selectedImage: com.antigrav.bignotes.core.model.CanvasImage? = null,
     onSelectedImageChange: ((com.antigrav.bignotes.core.model.CanvasImage?) -> Unit)? = null,
+    activeSearchHit: com.antigrav.bignotes.core.search.model.SearchHit? = null,
+    onDismissSearchHit: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var reticle by remember { mutableStateOf(ReticleState()) }
@@ -83,6 +88,12 @@ fun BigNotesCanvasView(
 
     val worldPageHeight = remember(pageFormat) {
         PdfPagePaginator.getWorldPageHeight(pageFormat)
+    }
+
+    LaunchedEffect(activeSearchHit) {
+        activeSearchHit?.let { hit ->
+            canvasViewRef?.scrollToWorldY(hit.minY)
+        }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -397,6 +408,87 @@ fun BigNotesCanvasView(
                 updateSelectedImage(null)
             }
         )
+
+        // 3.8. Active Search Hit Visual Highlight Box
+        val searchView = canvasViewRef
+        val hit = activeSearchHit
+        if (searchView != null && hit != null) {
+            @Suppress("UNUSED_VARIABLE")
+            val tick = viewportTick
+            val (screenMinX, screenMinY) = searchView.worldToScreen(hit.minX, hit.minY)
+            val (screenMaxX, screenMaxY) = searchView.worldToScreen(hit.maxX, hit.maxY)
+            val left = minOf(screenMinX, screenMaxX) - 10f
+            val top = minOf(screenMinY, screenMaxY) - 8f
+            val right = maxOf(screenMinX, screenMaxX) + 10f
+            val bottom = maxOf(screenMinY, screenMaxY) + 8f
+            val boxWidth = maxOf(20f, right - left)
+            val boxHeight = maxOf(20f, bottom - top)
+
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawRoundRect(
+                    color = Color(0xFFFFB74D).copy(alpha = 0.28f),
+                    topLeft = Offset(left, top),
+                    size = Size(boxWidth, boxHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx(), 10.dp.toPx())
+                )
+                drawRoundRect(
+                    color = Color(0xFFF57C00).copy(alpha = 0.85f),
+                    topLeft = Offset(left, top),
+                    size = Size(boxWidth, boxHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx(), 10.dp.toPx()),
+                    style = DrawStroke(
+                        width = 2.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(16f, 10f), 0f)
+                    )
+                )
+            }
+
+            // Floating badge above the matched handwriting cluster
+            val density = LocalDensity.current
+            val badgeXDp = with(density) { left.coerceAtLeast(8f).toDp() }
+            val badgeYDp = with(density) { (top - 36f).coerceAtLeast(viewOffsetY + 8f).toDp() }
+
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(1.dp, Color(0xFFF57C00).copy(alpha = 0.6f)),
+                shadowElevation = 6.dp,
+                modifier = Modifier.offset(x = badgeXDp, y = badgeYDp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = Color(0xFFF57C00),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = hit.matchedText,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    IconButton(
+                        onClick = { onDismissSearchHit?.invoke() },
+                        modifier = Modifier.size(18.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss Highlight",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+        }
 
         // 4. Vertical Fast Scrollbar Overlay on Right Edge
         val canvasView = canvasViewRef

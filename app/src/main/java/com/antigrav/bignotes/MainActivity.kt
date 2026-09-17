@@ -65,6 +65,9 @@ import com.antigrav.bignotes.ui.model.NoteItem
 import com.antigrav.bignotes.ui.help.HelpAboutDialog
 import com.antigrav.bignotes.ui.settings.SettingsDialog
 import com.antigrav.bignotes.ui.settings.SettingsCategory
+import com.antigrav.bignotes.core.search.HandwritingSearchManager
+import com.antigrav.bignotes.core.search.model.SearchHit
+import com.antigrav.bignotes.core.search.model.ModelDownloadStatus
 import com.antigrav.bignotes.ui.sidebar.DualSidebarContainer
 import com.antigrav.bignotes.ui.sidebar.SidebarLayoutDefaults
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -360,6 +363,51 @@ fun BigNotesMainScreen(
     val noteImages = remember { mutableStateMapOf<String, List<CanvasImage>>() }
     var selectedCanvasImage by remember { mutableStateOf<CanvasImage?>(null) }
 
+    // Offline Handwriting Recognition & Search Manager
+    val handwritingSearchManager = remember { HandwritingSearchManager(context) }
+    DisposableEffect(Unit) {
+        onDispose {
+            handwritingSearchManager.close()
+        }
+    }
+    val modelDownloadStatus by handwritingSearchManager.downloadStatus.collectAsState()
+    var searchHits by remember { mutableStateOf<Map<String, List<SearchHit>>>(emptyMap()) }
+    var activeSearchHit by remember { mutableStateOf<SearchHit?>(null) }
+    var searchJob by remember { mutableStateOf<Job?>(null) }
+
+    val onSearchQueryChanged: (String) -> Unit = { query ->
+        searchJob?.cancel()
+        if (query.isBlank()) {
+            searchHits = emptyMap()
+            activeSearchHit = null
+        } else {
+            searchJob = coroutineScope.launch {
+                delay(120L)
+                val hits = handwritingSearchManager.search(query)
+                searchHits = hits
+                val currentHit = hits[selectedNoteId]?.firstOrNull()
+                if (currentHit != null) {
+                    activeSearchHit = currentHit
+                }
+            }
+        }
+    }
+
+    // Auto-download language pack if not downloaded & index existing notes in background
+    LaunchedEffect(Unit) {
+        if (modelDownloadStatus is ModelDownloadStatus.NotDownloaded) {
+            handwritingSearchManager.downloadModel()
+        }
+        withContext(Dispatchers.IO) {
+            allNotes.forEach { note ->
+                val doc = noteStorageManager.loadNote(note.id)
+                if (doc != null && doc.strokes.isNotEmpty()) {
+                    handwritingSearchManager.indexNoteAsync(note.id, note.folderId, doc.strokes)
+                }
+            }
+        }
+    }
+
     // Helper to ensure a note exists the moment drawing starts on an empty canvas
     val ensureActiveNote: () -> String = {
         val existing = selectedNoteId
@@ -408,6 +456,7 @@ fun BigNotesMainScreen(
                 withContext(Dispatchers.IO) {
                     noteStorageManager.saveNote(updatedNote, strokesToSave, zoomScale, scrollY = currentPanY, images = imagesToSave)
                 }
+                handwritingSearchManager.indexNoteAsync(nId, updatedNote.folderId, strokesToSave)
                 hasUnsavedChangesSinceLastSnapshot = true
                 dirtyNoteId = null
             }
@@ -429,6 +478,7 @@ fun BigNotesMainScreen(
                 coroutineScope.launch(Dispatchers.IO) {
                     noteStorageManager.saveNote(updatedNote, strokesToSave, zoomScale, scrollY = currentPanY, images = imagesToSave)
                 }
+                handwritingSearchManager.indexNoteAsync(id, updatedNote.folderId, strokesToSave)
                 hasUnsavedChangesSinceLastSnapshot = true
             }
             dirtyNoteId = null
@@ -828,6 +878,8 @@ fun BigNotesMainScreen(
             },
             selectedImage = selectedCanvasImage,
             onSelectedImageChange = { selectedCanvasImage = it },
+            activeSearchHit = activeSearchHit,
+            onDismissSearchHit = { activeSearchHit = null },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -979,6 +1031,9 @@ fun BigNotesMainScreen(
                         noteImages.remove(it.id)
                         noteStorageManager.deleteNote(it.id)
                     }
+                    coroutineScope.launch(Dispatchers.IO) {
+                        handwritingSearchManager.deleteFolder(folderId)
+                    }
                     folders = folders.filter { it.id != folderId }
                     allNotes = allNotes.filter { it.folderId != folderId }
                     if (selectedFolderId == folderId) {
@@ -1003,11 +1058,16 @@ fun BigNotesMainScreen(
                         }
                     }
                     selectedNoteId = noteId
+                    val hit = searchHits[noteId]?.firstOrNull()
+                    activeSearchHit = hit
                 },
                 onNoteDelete = { noteId ->
                     noteStrokes.remove(noteId)
                     noteImages.remove(noteId)
                     noteStorageManager.deleteNote(noteId)
+                    coroutineScope.launch(Dispatchers.IO) {
+                        handwritingSearchManager.deleteNote(noteId)
+                    }
                     val deletedNote = allNotes.find { it.id == noteId }
                     allNotes = allNotes.filter { it.id != noteId }
                     if (selectedNoteId == noteId) {
@@ -1031,6 +1091,7 @@ fun BigNotesMainScreen(
                             coroutineScope.launch(Dispatchers.IO) {
                                 noteStorageManager.saveNote(updated, noteStrokes[noteId] ?: emptyList(), zoomScale)
                             }
+                            handwritingSearchManager.indexNoteAsync(noteId, updated.folderId, noteStrokes[noteId] ?: emptyList())
                             updated
                         } else note
                     }
@@ -1085,6 +1146,11 @@ fun BigNotesMainScreen(
                 },
                 onOpenHelpAbout = {
                     showHelpDialog = true
+                },
+                searchHits = searchHits,
+                onSearchQueryChanged = onSearchQueryChanged,
+                onSearchHitSelected = { hit ->
+                    activeSearchHit = hit
                 },
                 pageFormat = selectedPdfPageFormat,
                 getPageCount = { note ->
@@ -1196,6 +1262,8 @@ fun BigNotesMainScreen(
                 canvasView?.shapeSnapDelayMs = delay
                 prefs.edit().putLong("shape_snap_delay_ms", delay).apply()
             },
+            modelDownloadStatus = modelDownloadStatus,
+            onDownloadModel = { handwritingSearchManager.downloadModel() },
             initialCategory = initialSettingsCategory,
             onDismiss = { showSettingsDialog = false }
 

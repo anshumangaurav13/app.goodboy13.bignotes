@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +32,7 @@ import com.antigrav.bignotes.ui.components.SwipeToRevealItem
 import com.antigrav.bignotes.ui.model.NoteItem
 import com.antigrav.bignotes.core.export.PageFormat
 import com.antigrav.bignotes.core.export.PdfPagePaginator
+import com.antigrav.bignotes.core.search.model.SearchHit
 import kotlin.math.ceil
 import kotlin.math.max
 
@@ -44,6 +46,9 @@ fun NotesSidebar(
     onNoteRename: ((noteId: String, newTitle: String) -> Unit)? = null,
     onNoteExportPdf: ((NoteItem) -> Unit)? = null,
     onAddNote: () -> Unit,
+    searchHits: Map<String, List<SearchHit>> = emptyMap(),
+    onSearchQueryChanged: ((String) -> Unit)? = null,
+    onSearchHitSelected: ((SearchHit) -> Unit)? = null,
     pageFormat: PageFormat = PageFormat.A4,
     getPageCount: ((NoteItem) -> Int)? = null,
     statusBarHeight: Dp = 0.dp,
@@ -52,13 +57,14 @@ fun NotesSidebar(
     var editingNoteId by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredNotes = remember(notes, searchQuery) {
+    val filteredNotes = remember(notes, searchQuery, searchHits) {
         if (searchQuery.isBlank()) notes
         else {
             val q = searchQuery.trim().lowercase()
             notes.filter { note ->
                 note.title.lowercase().contains(q) ||
-                formatCreationDateTime(note.createdAt).lowercase().contains(q)
+                formatCreationDateTime(note.createdAt).lowercase().contains(q) ||
+                searchHits.containsKey(note.id)
             }
         }
     }
@@ -140,7 +146,10 @@ fun NotesSidebar(
                 Spacer(modifier = Modifier.width(6.dp))
                 androidx.compose.foundation.text.BasicTextField(
                     value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                    onValueChange = {
+                        searchQuery = it
+                        onSearchQueryChanged?.invoke(it)
+                    },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodySmall.copy(
                         color = MaterialTheme.colorScheme.onSurface,
@@ -151,7 +160,7 @@ fun NotesSidebar(
                     decorationBox = { innerTextField ->
                         if (searchQuery.isEmpty()) {
                             Text(
-                                text = "Search name or date...",
+                                text = "Search notes & handwriting...",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                                     fontSize = 11.5.sp
@@ -163,7 +172,10 @@ fun NotesSidebar(
                 )
                 if (searchQuery.isNotEmpty()) {
                     IconButton(
-                        onClick = { searchQuery = "" },
+                        onClick = {
+                            searchQuery = ""
+                            onSearchQueryChanged?.invoke("")
+                        },
                         modifier = Modifier.size(20.dp)
                     ) {
                         Icon(
@@ -246,9 +258,15 @@ fun NotesSidebar(
                             note = note,
                             isSelected = isSelected,
                             isEditing = isEditing,
+                            matchingHits = searchHits[note.id],
                             pageFormat = pageFormat,
                             getPageCount = getPageCount,
-                            onClick = { onNoteSelect(note.id) },
+                            onClick = {
+                                onNoteSelect(note.id)
+                                searchHits[note.id]?.firstOrNull()?.let { hit ->
+                                    onSearchHitSelected?.invoke(hit)
+                                }
+                            },
                             onLongClick = { editingNoteId = note.id },
                             onCommitRename = { newTitle ->
                                 onNoteRename?.invoke(note.id, newTitle)
@@ -269,6 +287,7 @@ private fun NoteRowItem(
     note: NoteItem,
     isSelected: Boolean,
     isEditing: Boolean,
+    matchingHits: List<SearchHit>? = null,
     pageFormat: PageFormat = PageFormat.A4,
     getPageCount: ((NoteItem) -> Int)? = null,
     onClick: () -> Unit,
@@ -429,6 +448,38 @@ private fun NoteRowItem(
                             )
                         }
                     }
+                }
+            }
+
+            val topHit = matchingHits?.firstOrNull()
+            if (topHit != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = topHit.snippet,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
