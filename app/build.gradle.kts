@@ -1,3 +1,8 @@
+import java.io.ByteArrayOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -76,4 +81,64 @@ dependencies {
     testImplementation("org.json:json:20240303")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+tasks.register("archiveDebugApk") {
+    group = "archive"
+    description = "Archives built debug APK into root archives/apks/ with timestamp, version and git hash."
+
+    doLast {
+        val buildDir = layout.buildDirectory.asFile.get()
+        val apkFile = File(buildDir, "outputs/apk/debug/app-debug.apk")
+        if (!apkFile.exists()) {
+            println("APK not found at ${apkFile.absolutePath}")
+            return@doLast
+        }
+
+        val archivesDir = File(rootDir, "archives/apks").apply { mkdirs() }
+        val historyFile = File(rootDir, "archives/build_history.md")
+
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val gitHash = try {
+            val stdout = ByteArrayOutputStream()
+            exec {
+                commandLine = listOf("git", "rev-parse", "--short", "HEAD")
+                standardOutput = stdout
+            }
+            stdout.toString().trim()
+        } catch (e: Exception) {
+            "unknown"
+        }
+
+        val versionName = android.defaultConfig.versionName ?: "1.0.0"
+        val versionCode = android.defaultConfig.versionCode ?: 1
+        val archiveFileName = "BigNotes-v${versionName}-b${versionCode}-${timestamp}-${gitHash}-debug.apk"
+        val destFile = File(archivesDir, archiveFileName)
+
+        apkFile.copyTo(destFile, overwrite = true)
+        val sizeMb = String.format(Locale.US, "%.2f MB", destFile.length() / (1024.0 * 1024.0))
+
+        if (!historyFile.exists()) {
+            historyFile.writeText(
+                "# BigNotes APK Build History\n\n" +
+                "| Date & Time | Version | Filename | Git Commit | File Size |\n" +
+                "| :--- | :--- | :--- | :--- | :--- |\n"
+            )
+        }
+        val dateFormatted = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val row = "| $dateFormatted | v${versionName} (b${versionCode}) | `$archiveFileName` | `$gitHash` | $sizeMb |\n"
+        historyFile.appendText(row)
+
+        println(" Archived APK to: ${destFile.absolutePath} ($sizeMb)")
+        println(" Updated build history: ${historyFile.absolutePath}")
+    }
+}
+
+afterEvaluate {
+    tasks.findByName("assembleDebug")?.let { assembleTask ->
+        tasks.findByName("archiveDebugApk")?.let { archiveTask ->
+            archiveTask.dependsOn(assembleTask)
+            assembleTask.finalizedBy(archiveTask)
+        }
+    }
 }

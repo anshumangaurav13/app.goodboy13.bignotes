@@ -73,7 +73,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.antigrav.bignotes.ui.theme.AppThemePreset
 import com.antigrav.bignotes.ui.theme.BigNotesTheme
 import com.antigrav.bignotes.ui.theme.InkPalette
 import com.antigrav.bignotes.ui.theme.ThemeConfig
@@ -90,15 +89,7 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             val prefs = remember { context.getSharedPreferences("bignotes_prefs", android.content.Context.MODE_PRIVATE) }
             val savedIsDark = remember { prefs.getBoolean("is_dark_mode", false) }
-            val savedPresetName = remember { prefs.getString("theme_preset", AppThemePreset.DEFAULT.name) ?: AppThemePreset.DEFAULT.name }
-            val initialPreset = remember {
-                try {
-                    AppThemePreset.valueOf(savedPresetName)
-                } catch (e: Exception) {
-                    AppThemePreset.DEFAULT
-                }
-            }
-            var themeConfig by remember { mutableStateOf(ThemeConfig(isDark = savedIsDark, preset = initialPreset)) }
+            var themeConfig by remember { mutableStateOf(ThemeConfig(isDark = savedIsDark)) }
 
             val configuration = LocalConfiguration.current
             val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -151,7 +142,6 @@ class MainActivity : ComponentActivity() {
                             themeConfig = newConfig
                             prefs.edit()
                                 .putBoolean("is_dark_mode", newConfig.isDark)
-                                .putString("theme_preset", newConfig.preset.name)
                                 .apply()
                         },
                         isSidebarVisible = isSidebarVisible,
@@ -330,7 +320,6 @@ fun BigNotesMainScreen(
     var selectedColorIndex by remember { mutableIntStateOf(initialColorIndex) }
     val initialHlColorIndex = remember { prefs.getInt("selected_highlighter_color_idx", 0) }
     var selectedHighlighterColorIndex by remember { mutableIntStateOf(initialHlColorIndex) }
-    var prevThemePreset by remember { mutableStateOf(themeConfig.preset) }
     var prevIsDark by remember { mutableStateOf(themeConfig.isDark) }
 
     val savedPressureCp1x = remember { prefs.getFloat("pressure_cp1x", PressureCurveDefaults.STANDARD.cp1x) }
@@ -693,14 +682,14 @@ fun BigNotesMainScreen(
     // Synchronize paper, dark mode, active tool, and current color reactively
     LaunchedEffect(themeConfig, activeTool, selectedColorIndex, selectedHighlighterColorIndex, canvasView) {
         val view = canvasView ?: return@LaunchedEffect
-        view.paperColor = PaperColor.forTheme(themeConfig.preset.name, themeConfig.isDark)
+        view.paperColor = PaperColor.forTheme(themeConfig.isDark)
         view.isDarkMode = themeConfig.isDark
 
         val isHl = activeTool == ActiveTool.HIGHLIGHTER
         val activePalette = if (isHl) {
-            InkPalette.getHighlighterColors(themeConfig.preset)
+            InkPalette.getHighlighterColors()
         } else {
-            InkPalette.getColors(themeConfig.preset)
+            InkPalette.getColors()
         }
         val chosenIndex = if (isHl) selectedHighlighterColorIndex else selectedColorIndex
         val activeColor = activePalette.getOrElse(chosenIndex) { activePalette[0] }
@@ -788,12 +777,12 @@ fun BigNotesMainScreen(
                     ActiveTool.HIGHLIGHTER -> PencilTone.LIGHT
                     else -> PencilTone.SOFT
                 }
-                boundView.paperColor = PaperColor.forTheme(themeConfig.preset.name, themeConfig.isDark)
+                boundView.paperColor = PaperColor.forTheme(themeConfig.isDark)
                 boundView.isDarkMode = themeConfig.isDark
                 val activePalette = if (activeTool == ActiveTool.HIGHLIGHTER) {
-                    InkPalette.getHighlighterColors(themeConfig.preset)
+                    InkPalette.getHighlighterColors()
                 } else {
-                    InkPalette.getColors(themeConfig.preset)
+                    InkPalette.getColors()
                 }
                 val chosenIndex = if (activeTool == ActiveTool.HIGHLIGHTER) selectedHighlighterColorIndex else selectedColorIndex
                 val activeColor = activePalette.getOrElse(chosenIndex) { activePalette[0] }
@@ -858,9 +847,9 @@ fun BigNotesMainScreen(
             }
             val isHighlighterActive = activeTool == ActiveTool.HIGHLIGHTER
             val rawPalette = if (isHighlighterActive) {
-                InkPalette.getHighlighterColors(themeConfig.preset)
+                InkPalette.getHighlighterColors()
             } else {
-                InkPalette.getColors(themeConfig.preset)
+                InkPalette.getColors()
             }
             val displayPalette = remember(rawPalette, themeConfig.isDark) {
                 if (themeConfig.isDark) {
@@ -886,19 +875,19 @@ fun BigNotesMainScreen(
                         view.activeTool = tool
                         if (tool == ActiveTool.HIGHLIGHTER) {
                             view.renderer.currentTone = PencilTone.LIGHT
-                            val hlPalette = InkPalette.getHighlighterColors(themeConfig.preset)
+                            val hlPalette = InkPalette.getHighlighterColors()
                             val chosen = hlPalette.getOrElse(selectedHighlighterColorIndex) { hlPalette[0] }
                             view.renderer.currentColorRgb = chosen.colorRgb
                             view.renderer.currentPaletteIndex = chosen.slotIndex
                         } else if (tool == ActiveTool.FOUNTAIN_PEN) {
                             view.renderer.currentTone = PencilTone.INK_BLACK
-                            val inkPalette = InkPalette.getColors(themeConfig.preset)
+                            val inkPalette = InkPalette.getColors()
                             val chosen = inkPalette.getOrElse(selectedColorIndex) { inkPalette[0] }
                             view.renderer.currentColorRgb = chosen.colorRgb
                             view.renderer.currentPaletteIndex = chosen.slotIndex
                         } else if (tool == ActiveTool.PENCIL) {
                             view.renderer.currentTone = PencilTone.SOFT
-                            val inkPalette = InkPalette.getColors(themeConfig.preset)
+                            val inkPalette = InkPalette.getColors()
                             val chosen = inkPalette.getOrElse(selectedColorIndex) { inkPalette[0] }
                             view.renderer.currentColorRgb = chosen.colorRgb
                             view.renderer.currentPaletteIndex = chosen.slotIndex
@@ -916,7 +905,7 @@ fun BigNotesMainScreen(
                     if (activeTool == ActiveTool.HIGHLIGHTER) {
                         selectedHighlighterColorIndex = idx
                         prefs.edit().putInt("selected_highlighter_color_idx", idx).apply()
-                        val hlPalette = InkPalette.getHighlighterColors(themeConfig.preset)
+                        val hlPalette = InkPalette.getHighlighterColors()
                         val chosen = hlPalette.getOrElse(idx) { hlPalette[0] }
                         canvasView?.let { view ->
                             view.renderer.currentColorRgb = chosen.colorRgb
@@ -925,7 +914,7 @@ fun BigNotesMainScreen(
                     } else {
                         selectedColorIndex = idx
                         prefs.edit().putInt("selected_color_idx", idx).apply()
-                        val inkPalette = InkPalette.getColors(themeConfig.preset)
+                        val inkPalette = InkPalette.getColors()
                         val chosen = inkPalette.getOrElse(idx) { inkPalette[0] }
                         canvasView?.let { view ->
                             view.renderer.currentColorRgb = chosen.colorRgb

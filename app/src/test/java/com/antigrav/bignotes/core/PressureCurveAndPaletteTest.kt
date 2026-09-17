@@ -3,7 +3,6 @@ package com.antigrav.bignotes.core
 import com.antigrav.bignotes.core.model.BezierControlPoints
 import com.antigrav.bignotes.core.model.PressureCurveDefaults
 import com.antigrav.bignotes.core.model.PressureCurveType
-import com.antigrav.bignotes.ui.theme.AppThemePreset
 import com.antigrav.bignotes.ui.theme.InkPalette
 import org.junit.Assert.*
 import org.junit.Test
@@ -42,14 +41,14 @@ class PressureCurveAndPaletteTest {
     @Test
     fun testInkPaletteDefault_royalBlueAndCohesivePalette() {
         // Canonical colors (used for both light and inverted dark mode via GL shader)
-        val colors = InkPalette.getColors(AppThemePreset.DEFAULT)
+        val colors = InkPalette.getColors()
         assertEquals(6, colors.size)
         // Slot 3 is Royal Blue (#1D4ED8)
         assertEquals(0xFF1D4ED8L, colors[3].colorRgb)
         assertEquals("Royal Blue", colors[3].name)
 
         // Highlighter palette: 3 curated colors
-        val hlColors = InkPalette.getHighlighterColors(AppThemePreset.DEFAULT)
+        val hlColors = InkPalette.getHighlighterColors()
         assertEquals(3, hlColors.size)
         assertEquals("Canary Yellow", hlColors[0].name)
         assertEquals("Mint Green", hlColors[1].name)

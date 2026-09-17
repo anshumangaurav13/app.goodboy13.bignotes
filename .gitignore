@@ -16,3 +16,6 @@ captures/
 .externalNativeBuild
 .cxx
 *.hprof
+
+# Archived APK binaries (preserve history markdown, ignore heavy binaries in git)
+archives/apks/*.apk

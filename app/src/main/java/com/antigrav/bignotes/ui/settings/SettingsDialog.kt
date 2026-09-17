@@ -42,7 +42,6 @@ import com.antigrav.bignotes.core.model.PaperColor
 import com.antigrav.bignotes.core.model.PressureCurveDefaults
 import com.antigrav.bignotes.core.model.VelocityCurveDefaults
 import com.antigrav.bignotes.ui.components.BezierCurveGraph
-import com.antigrav.bignotes.ui.theme.AppThemePreset
 import com.antigrav.bignotes.ui.theme.InkPalette
 import com.antigrav.bignotes.ui.theme.ThemeConfig
 import kotlin.math.roundToInt
@@ -75,7 +74,7 @@ enum class SettingsCategory(
     ),
     APPEARANCE(
         "Appearance",
-        "Theme preset, dark / light mode",
+        "Dark / light mode",
         Icons.Default.Palette,
         Color(0xFFEC4899)
     ),
@@ -905,7 +904,7 @@ private fun AppearanceDetail(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = if (themeConfig.isDark) "Dark parchment paper" else "Natural light paper",
+                        text = if (themeConfig.isDark) "Dark paper canvas" else "Natural light paper canvas",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
@@ -916,34 +915,6 @@ private fun AppearanceDetail(
                 onCheckedChange = { onThemeConfigChange(themeConfig.copy(isDark = it)) },
                 modifier = Modifier.scale(0.8f)
             )
-        }
-    }
-
-    Spacer(modifier = Modifier.height(14.dp))
-
-    SectionHeader("THEME PRESETS")
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        AppThemePreset.entries.chunked(2).forEach { rowPresets ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                rowPresets.forEach { preset ->
-                    ThemeGridCard(
-                        preset = preset,
-                        isDark = themeConfig.isDark,
-                        isSelected = themeConfig.preset == preset,
-                        onClick = { onThemeConfigChange(themeConfig.copy(preset = preset)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                if (rowPresets.size == 1) {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
-            }
         }
     }
 }
@@ -1088,146 +1059,6 @@ private fun BackupDetail(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
-        }
-    }
-}
-
-@Composable
-private fun ThemeGridCard(
-    preset: AppThemePreset,
-    isDark: Boolean,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val shape = RoundedCornerShape(12.dp)
-    val cardBorder = if (isSelected) {
-        BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-    } else {
-        BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
-    }
-    val cardBg = if (isSelected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-    }
-
-    val paper = PaperColor.forTheme(preset.name, isDark)
-    val paperComposeColor = Color(paper.colorHex)
-    val rawInkColors = remember(preset) { InkPalette.getColors(preset) }
-    val rawHlColors = remember(preset) { InkPalette.getHighlighterColors(preset) }
-    val inkColors = remember(rawInkColors, isDark) {
-        if (isDark) {
-            rawInkColors.map { item ->
-                val c = item.color
-                item.copy(color = Color(1f - c.red, 1f - c.green, 1f - c.blue, c.alpha))
-            }
-        } else rawInkColors
-    }
-    val hlColors = remember(rawHlColors, isDark) {
-        if (isDark) {
-            rawHlColors.map { item ->
-                val c = item.color
-                item.copy(color = Color(1f - c.red, 1f - c.green, 1f - c.blue, c.alpha))
-            }
-        } else rawHlColors
-    }
-
-    Surface(
-        shape = shape,
-        border = cardBorder,
-        color = cardBg,
-        modifier = modifier
-            .clip(shape)
-            .clickable(onClick = onClick)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp)
-        ) {
-            // Header: Name & Radio
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = preset.displayName,
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    ),
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                // Radio indicator
-                Box(
-                    modifier = Modifier
-                        .size(15.dp)
-                        .clip(CircleShape)
-                        .border(
-                            width = if (isSelected) 4.5.dp else 1.2.dp,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-                            shape = CircleShape
-                        )
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Mini Paper Canvas Preview showcasing paper background, ink dots, and highlighter swatches
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(paperComposeColor)
-                    .border(0.8.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 6.dp, vertical = 5.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // Row 1: 6 Ink Palette Dots
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        inkColors.forEach { item ->
-                            Box(
-                                modifier = Modifier
-                                    .size(8.5.dp)
-                                    .clip(CircleShape)
-                                    .background(item.color)
-                                    .border(0.5.dp, Color.Black.copy(alpha = 0.15f), CircleShape)
-                            )
-                        }
-                    }
-
-                    // Row 2: 3 Highlighter Swatches (Wide translucent highlighter stroke look)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        hlColors.forEach { item ->
-                            Box(
-                                modifier = Modifier
-                                    .width(24.dp)
-                                    .height(5.5.dp)
-                                    .clip(RoundedCornerShape(2.5.dp))
-                                    .background(item.color)
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }

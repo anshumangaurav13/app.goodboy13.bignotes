@@ -6,7 +6,6 @@ import android.graphics.pdf.PdfDocument
 import com.antigrav.bignotes.core.model.PaperColor
 import com.antigrav.bignotes.core.model.Stroke
 import com.antigrav.bignotes.core.model.StrokePoint
-import com.antigrav.bignotes.ui.theme.AppThemePreset
 import com.antigrav.bignotes.ui.theme.InkPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
