@@ -1,5 +1,6 @@
 package com.antigrav.bignotes.core
 
+import com.antigrav.bignotes.core.export.MarkdownExporter
 import com.antigrav.bignotes.core.export.PageFormat
 import com.antigrav.bignotes.core.export.PdfPagePaginator
 import com.antigrav.bignotes.core.model.PencilTone
@@ -7,6 +8,7 @@ import com.antigrav.bignotes.core.model.Stroke
 import com.antigrav.bignotes.core.model.StrokePoint
 import com.antigrav.bignotes.core.storage.BigNoteBinaryFormat
 import com.antigrav.bignotes.core.storage.BigNoteDocument
+import com.antigrav.bignotes.core.storage.RecognizedTextBlock
 import org.junit.Assert.*
 import org.junit.Test
 import kotlin.math.abs
@@ -175,5 +177,95 @@ class BigNoteExportAndStorageTest {
         assertEquals(792, PageFormat.LETTER.heightPt)
         assertEquals(595, PageFormat.A4.widthPt)
         assertEquals(842, PageFormat.A4.heightPt)
+    }
+
+    @Test
+    fun testBigNoteBinaryFormat_recognizedTextBlocksRoundTrip() {
+        val stroke = Stroke(
+            id = "stroke_txt_1",
+            points = listOf(StrokePoint(10f, 20f, 0.5f, 100L)),
+            tone = PencilTone.INK_BLACK,
+            baseWidth = 4.0f
+        )
+        val textBlocks = listOf(
+            RecognizedTextBlock(
+                clusterId = "cluster_1",
+                text = "Hello BigNotes",
+                minX = 10f,
+                minY = 20f,
+                maxX = 150f,
+                maxY = 60f,
+                updatedAt = 1700000000000L
+            ),
+            RecognizedTextBlock(
+                clusterId = "cluster_2",
+                text = "Searchable handwriting layer",
+                minX = 10f,
+                minY = 70f,
+                maxX = 300f,
+                maxY = 110f,
+                updatedAt = 1700000005000L
+            )
+        )
+        val doc = BigNoteDocument(
+            noteId = "note_with_text",
+            folderId = "folder_default",
+            title = "Text Recognition Test",
+            createdAt = 1700000000000L,
+            updatedAt = 1700000010000L,
+            strokes = listOf(stroke),
+            textBlocks = textBlocks
+        )
+
+        val bytes = BigNoteBinaryFormat.serialize(doc)
+        val restored = BigNoteBinaryFormat.deserialize(bytes)
+
+        assertEquals("note_with_text", restored.noteId)
+        assertEquals(2, restored.textBlocks.size)
+        assertEquals("cluster_1", restored.textBlocks[0].clusterId)
+        assertEquals("Hello BigNotes", restored.textBlocks[0].text)
+        assertEquals(10f, restored.textBlocks[0].minX, 0.01f)
+        assertEquals(60f, restored.textBlocks[0].maxY, 0.01f)
+        assertEquals(1700000000000L, restored.textBlocks[0].updatedAt)
+
+        assertEquals("cluster_2", restored.textBlocks[1].clusterId)
+        assertEquals("Searchable handwriting layer", restored.textBlocks[1].text)
+        assertEquals(300f, restored.textBlocks[1].maxX, 0.01f)
+    }
+
+    @Test
+    fun testMarkdownExporter_structuredFormatting() {
+        val blocks = listOf(
+            RecognizedTextBlock(
+                clusterId = "c2",
+                text = "This is the second line of the first paragraph.",
+                minX = 50f,
+                minY = 70f,
+                maxX = 400f,
+                maxY = 90f
+            ),
+            RecognizedTextBlock(
+                clusterId = "c1",
+                text = "This is the first line.",
+                minX = 50f,
+                minY = 30f,
+                maxX = 300f,
+                maxY = 50f
+            ),
+            RecognizedTextBlock(
+                clusterId = "c3",
+                text = "And here is a distinct second paragraph #physics.",
+                minX = 50f,
+                minY = 200f,
+                maxX = 450f,
+                maxY = 225f
+            )
+        )
+
+        val md = MarkdownExporter.generateMarkdown("Quantum Mechanics", blocks)
+
+        assertTrue("Must start with H1 title", md.startsWith("# Quantum Mechanics\n\n"))
+        assertTrue("First line must precede second line based on Y sorting", md.indexOf("This is the first line.") < md.indexOf("This is the second line of the first paragraph."))
+        assertTrue("Large gap must create paragraph break", md.contains("\n\nAnd here is a distinct second paragraph #physics."))
     }
 }

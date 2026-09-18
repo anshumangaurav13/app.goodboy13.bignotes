@@ -15,6 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -62,7 +65,6 @@ import com.antigrav.bignotes.ui.canvas.BigNotesCanvasView
 import com.antigrav.bignotes.ui.model.FolderItem
 import com.antigrav.bignotes.ui.model.MockData
 import com.antigrav.bignotes.ui.model.NoteItem
-import com.antigrav.bignotes.ui.help.HelpAboutDialog
 import com.antigrav.bignotes.ui.settings.SettingsDialog
 import com.antigrav.bignotes.ui.settings.SettingsCategory
 import com.antigrav.bignotes.core.search.HandwritingSearchManager
@@ -193,8 +195,8 @@ fun BigNotesMainScreen(
             try { SettingsCategory.valueOf(name.uppercase()) } catch (e: Exception) { null }
         }
     }
+    var activeSettingsCategory by remember { mutableStateOf<SettingsCategory?>(initialSettingsCategory) }
     var showSettingsDialog by remember { mutableStateOf(initialOpenSettings) }
-    var showHelpDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var isExporting by remember { mutableStateOf(false) }
     var exportTargetNote by remember { mutableStateOf<NoteItem?>(null) }
@@ -277,11 +279,8 @@ fun BigNotesMainScreen(
     var dirtyNoteId by remember { mutableStateOf<String?>(null) }
     var saveJob by remember { mutableStateOf<Job?>(null) }
 
-    val initialFolders = remember {
-        noteStorageManager.loadFolders() ?: listOf(FolderItem(id = "folder_main", name = "Main", noteCount = 0))
-    }
-    val initialNotes = remember {
-        noteStorageManager.loadAllNotesMetadataFast()
+    val (initialFolders, initialNotes) = remember {
+        noteStorageManager.initializeDefaultWorkspaceIfEmpty()
     }
     val lastOpenedNoteId = remember {
         prefs.getString("last_opened_note_id", null)
@@ -297,7 +296,7 @@ fun BigNotesMainScreen(
     }
 
     var folders by remember { mutableStateOf(computedInitialFolders) }
-    var selectedFolderId by remember { mutableStateOf<String?>(initialSelectedNote?.folderId ?: initialFolders.firstOrNull()?.id ?: "folder_main") }
+    var selectedFolderId by remember { mutableStateOf<String?>(initialSelectedNote?.folderId ?: initialFolders.firstOrNull()?.id) }
     var allNotes by remember { mutableStateOf(initialNotes) }
     var selectedNoteId by remember { mutableStateOf<String?>(initialSelectedNote?.id) }
 
@@ -393,15 +392,25 @@ fun BigNotesMainScreen(
         }
     }
 
-    // Auto-download language pack if not downloaded & index existing notes in background
+    // Auto-download language pack if not downloaded & synchronize handwriting search index
     LaunchedEffect(Unit) {
         if (modelDownloadStatus is ModelDownloadStatus.NotDownloaded) {
             handwritingSearchManager.downloadModel()
         }
         withContext(Dispatchers.IO) {
+            val indexedTimestamps = handwritingSearchManager.getIndexedTimestamps()
             allNotes.forEach { note ->
-                val doc = noteStorageManager.loadNote(note.id)
-                if (doc != null && doc.strokes.isNotEmpty()) {
+                val lastIndexed = indexedTimestamps[note.id]
+                // Skip if Room index is already up to date with the note's last modification
+                if (lastIndexed != null && lastIndexed >= note.updatedAt) {
+                    return@forEach
+                }
+
+                // Check document for cached pre-recognized text blocks
+                val doc = noteStorageManager.loadNote(note.id) ?: return@forEach
+                if (doc.textBlocks.isNotEmpty()) {
+                    handwritingSearchManager.indexFromDocumentIfCached(note.folderId, doc)
+                } else if (doc.strokes.isNotEmpty()) {
                     handwritingSearchManager.indexNoteAsync(note.id, note.folderId, doc.strokes)
                 }
             }
@@ -414,29 +423,33 @@ fun BigNotesMainScreen(
         if (existing != null) {
             existing
         } else {
-            val activeFolderId = selectedFolderId ?: folders.firstOrNull()?.id ?: "folder_main"
-            val countInFolder = allNotes.count { it.folderId == activeFolderId }
-            val noteNum = countInFolder + 1
-            val newNote = NoteItem(
-                id = "note_${System.currentTimeMillis()}",
-                folderId = activeFolderId,
-                title = "Note $noteNum",
-                previewText = "1 stroke",
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
-            )
-            allNotes = listOf(newNote) + allNotes
-            noteStrokes[newNote.id] = emptyList()
-            noteImages[newNote.id] = emptyList()
-            selectedNoteId = newNote.id
-            prefs.edit().putString("last_opened_note_id", newNote.id).apply()
+            val activeFolderId = selectedFolderId ?: folders.firstOrNull()?.id
+            if (activeFolderId == null) {
+                ""
+            } else {
+                val countInFolder = allNotes.count { it.folderId == activeFolderId }
+                val noteNum = countInFolder + 1
+                val newNote = NoteItem(
+                    id = "note_${System.currentTimeMillis()}",
+                    folderId = activeFolderId,
+                    title = "Note $noteNum",
+                    previewText = "1 stroke",
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                )
+                allNotes = listOf(newNote) + allNotes
+                noteStrokes[newNote.id] = emptyList()
+                noteImages[newNote.id] = emptyList()
+                selectedNoteId = newNote.id
+                prefs.edit().putString("last_opened_note_id", newNote.id).apply()
 
-            folders = folders.map { folder ->
-                if (folder.id == activeFolderId) {
-                    folder.copy(noteCount = folder.noteCount + 1)
-                } else folder
+                folders = folders.map { folder ->
+                    if (folder.id == activeFolderId) {
+                        folder.copy(noteCount = folder.noteCount + 1)
+                    } else folder
+                }
+                newNote.id
             }
-            newNote.id
         }
     }
 
@@ -520,6 +533,52 @@ fun BigNotesMainScreen(
                         scheduleDebouncedSave()
                     }
                 }
+            }
+        }
+    }
+
+    val createNewFolder: () -> Unit = {
+        val newIndex = folders.size + 1
+        val newFolder = FolderItem(
+            id = "folder_${System.currentTimeMillis()}",
+            name = "Folder $newIndex",
+            noteCount = 0
+        )
+        folders = folders + newFolder
+        selectedFolderId = newFolder.id
+        hasUnsavedChangesSinceLastSnapshot = true
+    }
+
+    val createNewNote: () -> Unit = {
+        if (folders.isNotEmpty()) {
+            flushSaveNow(selectedNoteId)
+            selectedNoteId?.let { currentId ->
+                canvasView?.let { v ->
+                    noteStrokes[currentId] = v.renderer.getCommittedStrokes()
+                }
+            }
+            val activeFolderId = selectedFolderId ?: folders.firstOrNull()?.id
+            if (activeFolderId != null) {
+                val countInFolder = allNotes.count { it.folderId == activeFolderId }
+                val newNoteIndex = countInFolder + 1
+                val newNote = NoteItem(
+                    id = "note_${System.currentTimeMillis()}",
+                    folderId = activeFolderId,
+                    title = "Note $newNoteIndex",
+                    previewText = "Empty note",
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                )
+                allNotes = listOf(newNote) + allNotes
+                noteStrokes[newNote.id] = emptyList()
+                selectedNoteId = newNote.id
+
+                folders = folders.map { folder ->
+                    if (folder.id == activeFolderId) {
+                        folder.copy(noteCount = folder.noteCount + 1)
+                    } else folder
+                }
+                hasUnsavedChangesSinceLastSnapshot = true
             }
         }
     }
@@ -813,6 +872,10 @@ fun BigNotesMainScreen(
             pageFormat = selectedPdfPageFormat,
             showPageSeparators = showPageSeparators,
             inkBleedConfig = inkBleedConfig,
+            isCanvasEnabled = selectedNoteId != null,
+            hasFolders = folders.isNotEmpty(),
+            onAddNote = createNewNote,
+            onAddFolder = createNewFolder,
             onUndoRedoStateChanged = { undo, redo ->
                 canUndo = undo
                 canRedo = redo
@@ -880,6 +943,22 @@ fun BigNotesMainScreen(
             onSelectedImageChange = { selectedCanvasImage = it },
             activeSearchHit = activeSearchHit,
             onDismissSearchHit = { activeSearchHit = null },
+            onCopySelectedStrokesAsText = { strokes ->
+                val noteId = selectedNoteId
+                if (noteId != null && strokes.isNotEmpty()) {
+                    coroutineScope.launch {
+                        val text = handwritingSearchManager.getTextForStrokes(noteId, strokes)
+                        if (text.isNotBlank()) {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("Handwritten Note", text)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Copied: \"$text\"", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "No text recognized in selection", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -918,8 +997,8 @@ fun BigNotesMainScreen(
             NoteToolbar(
                 isSidebarVisible = isSidebarVisible,
                 onToggleSidebar = onToggleSidebar,
-                folderTitle = currentFolder?.name ?: "Main",
-                noteTitle = currentNote?.title ?: "(New Note)",
+                folderTitle = currentFolder?.name ?: if (folders.isEmpty()) "No Folders" else "Main",
+                noteTitle = currentNote?.title ?: if (folders.isEmpty()) "Create folder first" else "No Note",
                 activeTool = activeTool,
                 onToolChange = { tool ->
                     activeTool = tool
@@ -995,6 +1074,10 @@ fun BigNotesMainScreen(
                     photoPickerLauncher.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                     )
+                },
+                onExportNote = {
+                    exportTargetNote = currentNote
+                    showExportDialog = true
                 },
                 modifier = Modifier.fillMaxWidth()
             )
@@ -1101,51 +1184,15 @@ fun BigNotesMainScreen(
                     exportTargetNote = note
                     showExportDialog = true
                 },
-                onAddFolder = {
-                    val newIndex = folders.size + 1
-                    val newFolder = FolderItem(
-                        id = "folder_${System.currentTimeMillis()}",
-                        name = "Folder $newIndex",
-                        noteCount = 0
-                    )
-                    folders = folders + newFolder
-                    selectedFolderId = newFolder.id
-                    hasUnsavedChangesSinceLastSnapshot = true
-                },
-                onAddNote = {
-                    flushSaveNow(selectedNoteId)
-                    selectedNoteId?.let { currentId ->
-                        canvasView?.let { v ->
-                            noteStrokes[currentId] = v.renderer.getCommittedStrokes()
-                        }
-                    }
-                    val activeFolderId = selectedFolderId ?: folders.firstOrNull()?.id ?: "folder_main"
-                    val countInFolder = allNotes.count { it.folderId == activeFolderId }
-                    val newNoteIndex = countInFolder + 1
-                    val newNote = NoteItem(
-                        id = "note_${System.currentTimeMillis()}",
-                        folderId = activeFolderId,
-                        title = "Note $newNoteIndex",
-                        previewText = "Empty note",
-                        createdAt = System.currentTimeMillis(),
-                        updatedAt = System.currentTimeMillis()
-                    )
-                    allNotes = listOf(newNote) + allNotes
-                    noteStrokes[newNote.id] = emptyList()
-                    selectedNoteId = newNote.id
-
-                    folders = folders.map { folder ->
-                        if (folder.id == activeFolderId) {
-                            folder.copy(noteCount = folder.noteCount + 1)
-                        } else folder
-                    }
-                    hasUnsavedChangesSinceLastSnapshot = true
-                },
+                onAddFolder = createNewFolder,
+                onAddNote = createNewNote,
                 onOpenSettings = {
+                    activeSettingsCategory = null
                     showSettingsDialog = true
                 },
                 onOpenHelpAbout = {
-                    showHelpDialog = true
+                    activeSettingsCategory = SettingsCategory.HELP
+                    showSettingsDialog = true
                 },
                 searchHits = searchHits,
                 onSearchQueryChanged = onSearchQueryChanged,
@@ -1169,13 +1216,6 @@ fun BigNotesMainScreen(
                     .offset { IntOffset(x = (animatedSidebarWidthPx - sidebarWidthPx).roundToInt(), y = 0) }
             )
         }
-    }
-
-    // Help & About Dialog
-    if (showHelpDialog) {
-        HelpAboutDialog(
-            onDismiss = { showHelpDialog = false }
-        )
     }
 
     // Settings & Appearance Dialog
@@ -1264,8 +1304,11 @@ fun BigNotesMainScreen(
             },
             modelDownloadStatus = modelDownloadStatus,
             onDownloadModel = { handwritingSearchManager.downloadModel() },
-            initialCategory = initialSettingsCategory,
-            onDismiss = { showSettingsDialog = false }
+            initialCategory = activeSettingsCategory,
+            onDismiss = {
+                showSettingsDialog = false
+                activeSettingsCategory = null
+            }
 
         )
     }
@@ -1325,12 +1368,16 @@ fun BigNotesMainScreen(
                         } else {
                             targetNote?.id?.let { noteImages[it] } ?: emptyList()
                         }
+                        val targetTextBlocks = targetNote?.id?.let {
+                            handwritingSearchManager.getTextBlocks(it)
+                        } ?: emptyList()
                         val pdfFile = PdfExporter.exportNoteToPdf(
                             context = context,
                             noteTitle = targetNote?.title ?: "Note",
                             strokes = targetStrokes,
                             options = exportOptions,
-                            images = targetImages
+                            images = targetImages,
+                            textBlocks = targetTextBlocks
                         )
                         isExporting = false
                         showExportDialog = false
@@ -1347,6 +1394,39 @@ fun BigNotesMainScreen(
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "Share PDF Note"))
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        isExporting = false
+                    }
+                }
+            },
+            onExportMarkdown = {
+                coroutineScope.launch {
+                    try {
+                        isExporting = true
+                        val targetTextBlocks = targetNote?.id?.let {
+                            handwritingSearchManager.getTextBlocks(it)
+                        } ?: emptyList()
+                        val mdFile = com.antigrav.bignotes.core.export.MarkdownExporter.exportNoteToMarkdown(
+                            context = context,
+                            noteTitle = targetNote?.title ?: "Note",
+                            textBlocks = targetTextBlocks
+                        )
+                        isExporting = false
+                        showExportDialog = false
+                        exportTargetNote = null
+
+                        val uri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            mdFile
+                        )
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/markdown"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Share Markdown Note"))
                     } catch (e: Exception) {
                         e.printStackTrace()
                         isExporting = false

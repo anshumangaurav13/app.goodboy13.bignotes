@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,6 +47,7 @@ fun NotesSidebar(
     onNoteRename: ((noteId: String, newTitle: String) -> Unit)? = null,
     onNoteExportPdf: ((NoteItem) -> Unit)? = null,
     onAddNote: () -> Unit,
+    canAddNote: Boolean = true,
     searchHits: Map<String, List<SearchHit>> = emptyMap(),
     onSearchQueryChanged: ((String) -> Unit)? = null,
     onSearchHitSelected: ((SearchHit) -> Unit)? = null,
@@ -98,19 +100,29 @@ fun NotesSidebar(
                 ),
                 color = MaterialTheme.colorScheme.onSurface
             )
+            val addNoteBgColor = if (canAddNote) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            }
+            val addNoteIconTint = if (canAddNote) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+            }
             Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f),
+                color = addNoteBgColor,
                 modifier = Modifier
                     .size(28.dp)
                     .clip(CircleShape)
-                    .clickable(onClick = onAddNote)
+                    .then(if (canAddNote) Modifier.clickable(onClick = onAddNote) else Modifier)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.NoteAdd,
-                        contentDescription = "New Note",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        contentDescription = if (canAddNote) "New Note" else "Create a folder first",
+                        tint = addNoteIconTint,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -203,18 +215,26 @@ fun NotesSidebar(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Description,
+                        imageVector = if (canAddNote) Icons.Default.Description else Icons.Default.FolderOff,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
                         modifier = Modifier.size(36.dp)
                     )
                     Text(
-                        text = "No notes yet",
+                        text = if (canAddNote) "No notes yet" else "Create a folder first",
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
+                    if (!canAddNote) {
+                        Text(
+                            text = "Notes must belong to a folder",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                        )
+                    }
                     FilledTonalButton(
                         onClick = onAddNote,
+                        enabled = canAddNote,
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                         modifier = Modifier.height(30.dp)

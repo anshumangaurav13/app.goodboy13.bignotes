@@ -108,6 +108,7 @@ fun DualSidebarContainer(
             NotesSidebar(
                 notes = notes,
                 selectedNoteId = selectedNoteId,
+                canAddNote = folders.isNotEmpty(),
                 onNoteSelect = onNoteSelect,
                 onNoteDelete = onNoteDelete,
                 onNoteRename = onNoteRename,

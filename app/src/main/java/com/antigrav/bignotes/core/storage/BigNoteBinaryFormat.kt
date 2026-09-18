@@ -20,6 +20,16 @@ data class BigNoteMetadata(
     val scrollY: Float = 0.0f
 )
 
+data class RecognizedTextBlock(
+    val clusterId: String,
+    val text: String,
+    val minX: Float,
+    val minY: Float,
+    val maxX: Float,
+    val maxY: Float,
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
 data class BigNoteDocument(
     val noteId: String,
     val folderId: String,
@@ -29,7 +39,8 @@ data class BigNoteDocument(
     val zoom: Float = 1.0f,
     val scrollY: Float = 0.0f,
     val strokes: List<Stroke> = emptyList(),
-    val images: List<com.antigrav.bignotes.core.model.CanvasImage> = emptyList()
+    val images: List<com.antigrav.bignotes.core.model.CanvasImage> = emptyList(),
+    val textBlocks: List<RecognizedTextBlock> = emptyList()
 )
 
 /**
@@ -42,15 +53,16 @@ object BigNoteBinaryFormat {
     private const val VERSION_V1_DEFLATED: Byte = 1
     private const val VERSION_V3_DEFLATED: Byte = 3
     private const val VERSION_V4_DEFLATED: Byte = 4
+    private const val VERSION_V5_DEFLATED: Byte = 5
     private const val V1_QUANTIZE_SCALE = 20.0f
 
     fun serialize(doc: BigNoteDocument): ByteArray {
         val byteOut = ByteArrayOutputStream(1024)
         val out = DataOutputStream(BufferedOutputStream(byteOut, 16384))
 
-        // 1. Header (Magic + Version 4: Quantized + Deflater Zlib + Highlighter flag + Images)
+        // 1. Header (Magic + Version 5: Quantized + Deflater Zlib + Highlighter flag + Images + Text Blocks)
         out.write(MAGIC)
-        out.writeByte(VERSION_V4_DEFLATED.toInt())
+        out.writeByte(VERSION_V5_DEFLATED.toInt())
 
 
         // 2. Metadata Block
@@ -132,6 +144,18 @@ object BigNoteBinaryFormat {
             out.writeFloat(img.cropRight)
             out.writeFloat(img.cropBottom)
             out.writeLong(img.zIndex)
+        }
+
+        // 5. Recognized Text Clusters Block (Version 5+)
+        out.writeInt(doc.textBlocks.size)
+        for (block in doc.textBlocks) {
+            out.writeUTF(block.clusterId)
+            out.writeUTF(block.text)
+            out.writeFloat(block.minX)
+            out.writeFloat(block.minY)
+            out.writeFloat(block.maxX)
+            out.writeFloat(block.maxY)
+            out.writeLong(block.updatedAt)
         }
 
         out.flush()
@@ -241,8 +265,8 @@ object BigNoteBinaryFormat {
                     strokes = strokes
                 )
             }
-            VERSION_V1_DEFLATED, VERSION_V3_DEFLATED, VERSION_V4_DEFLATED -> {
-                // Version 1 / Version 3 / Version 4 (Deflated with 16-bit Quantization + Images)
+            VERSION_V1_DEFLATED, VERSION_V3_DEFLATED, VERSION_V4_DEFLATED, VERSION_V5_DEFLATED -> {
+                // Version 1 / Version 3 / Version 4 / Version 5 (Deflated with 16-bit Quantization + Images + Text Blocks)
                 val compressedSize = `in`.readInt()
                 val compressedBytes = ByteArray(compressedSize)
                 `in`.readFully(compressedBytes)
@@ -329,6 +353,27 @@ object BigNoteBinaryFormat {
                     emptyList()
                 }
 
+                val textBlocks = if (version >= VERSION_V5_DEFLATED) {
+                    val count = `in`.readInt()
+                    val list = ArrayList<RecognizedTextBlock>(count)
+                    for (i in 0 until count) {
+                        list.add(
+                            RecognizedTextBlock(
+                                clusterId = `in`.readUTF(),
+                                text = `in`.readUTF(),
+                                minX = `in`.readFloat(),
+                                minY = `in`.readFloat(),
+                                maxX = `in`.readFloat(),
+                                maxY = `in`.readFloat(),
+                                updatedAt = `in`.readLong()
+                            )
+                        )
+                    }
+                    list
+                } else {
+                    emptyList()
+                }
+
                 BigNoteDocument(
                     noteId = noteId,
                     folderId = folderId,
@@ -338,7 +383,8 @@ object BigNoteBinaryFormat {
                     zoom = zoom,
                     scrollY = scrollY,
                     strokes = strokes,
-                    images = images
+                    images = images,
+                    textBlocks = textBlocks
                 )
 
             }

@@ -21,5 +21,6 @@ enum class PdfRenderMode(
 
 data class PdfExportOptions(
     val pageFormat: PageFormat = PageFormat.A4,
-    val renderMode: PdfRenderMode = PdfRenderMode.RASTER_300DPI
+    val renderMode: PdfRenderMode = PdfRenderMode.RASTER_300DPI,
+    val embedSearchableText: Boolean = true
 )

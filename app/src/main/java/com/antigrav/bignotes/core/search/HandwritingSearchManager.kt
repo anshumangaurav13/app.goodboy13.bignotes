@@ -10,6 +10,9 @@ import com.antigrav.bignotes.core.search.db.SearchDatabase
 import com.antigrav.bignotes.core.search.model.ModelDownloadStatus
 import com.antigrav.bignotes.core.search.model.SearchHit
 import com.antigrav.bignotes.core.search.recognition.DigitalInkRecognitionEngine
+import com.antigrav.bignotes.core.storage.BigNoteDocument
+import com.antigrav.bignotes.core.storage.NoteStorageManager
+import com.antigrav.bignotes.core.storage.RecognizedTextBlock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 import kotlin.math.min
 
@@ -26,13 +30,14 @@ import kotlin.math.min
  */
 class HandwritingSearchManager(
     context: Context,
-    private val recognitionEngine: DigitalInkRecognitionEngine = DigitalInkRecognitionEngine()
+    private val recognitionEngine: DigitalInkRecognitionEngine = DigitalInkRecognitionEngine(),
+    private val noteStorageManager: NoteStorageManager = NoteStorageManager(context)
 ) {
     private val TAG = "HandwritingSearchMgr"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val searchDao: HandwritingSearchDao = SearchDatabase.getInstance(context).handwritingSearchDao()
 
-    private var activeIndexingJob: Job? = null
+    private val activeIndexingJobs = ConcurrentHashMap<String, Job>()
 
     val downloadStatus: StateFlow<ModelDownloadStatus> = recognitionEngine.downloadStatus
 
@@ -40,12 +45,42 @@ class HandwritingSearchManager(
         recognitionEngine.downloadModelAsync(onComplete)
     }
 
+    suspend fun getIndexedTimestamps(): Map<String, Long> = withContext(Dispatchers.IO) {
+        searchDao.getAllIndexedNotesTimestamps().associate { it.noteId to it.lastIndexedAt }
+    }
+
+    /**
+     * Fast-indexes pre-recognized text blocks directly from the document into Room cache
+     * in < 1ms without invoking ML Kit.
+     */
+    suspend fun indexFromDocumentIfCached(folderId: String, doc: BigNoteDocument): Boolean = withContext(Dispatchers.IO) {
+        if (doc.textBlocks.isEmpty()) return@withContext false
+        val entities = doc.textBlocks.map { tb ->
+            HandwritingSearchEntity(
+                clusterId = tb.clusterId,
+                noteId = doc.noteId,
+                folderId = folderId,
+                recognizedText = tb.text,
+                minX = tb.minX,
+                minY = tb.minY,
+                maxX = tb.maxX,
+                maxY = tb.maxY,
+                updatedAt = tb.updatedAt
+            )
+        }
+        searchDao.deleteForNote(doc.noteId)
+        searchDao.insertAll(entities)
+        Log.d(TAG, "Cached indexed ${entities.size} text blocks for note ${doc.noteId}")
+        true
+    }
+
     /**
      * Clusters strokes and indexes recognized handwriting for the specified note asynchronously in the background.
+     * Persists recognized text blocks both in the Room search cache and back into the .bignote file.
      */
     fun indexNoteAsync(noteId: String, folderId: String, strokes: List<Stroke>) {
-        activeIndexingJob?.cancel()
-        activeIndexingJob = scope.launch {
+        activeIndexingJobs[noteId]?.cancel()
+        val job = scope.launch {
             try {
                 // 1. Spatially cluster ink strokes into lines/phrases
                 val clusters = withContext(Dispatchers.Default) {
@@ -54,11 +89,13 @@ class HandwritingSearchManager(
 
                 if (clusters.isEmpty()) {
                     searchDao.deleteForNote(noteId)
+                    noteStorageManager.updateNoteTextBlocks(noteId, emptyList())
                     return@launch
                 }
 
                 // 2. Perform ML Kit recognition for each cluster
                 val entities = mutableListOf<HandwritingSearchEntity>()
+                val textBlocks = mutableListOf<RecognizedTextBlock>()
                 val now = System.currentTimeMillis()
 
                 for (cluster in clusters) {
@@ -77,6 +114,17 @@ class HandwritingSearchManager(
                                 updatedAt = now
                             )
                         )
+                        textBlocks.add(
+                            RecognizedTextBlock(
+                                clusterId = cluster.clusterId,
+                                text = text,
+                                minX = cluster.minX,
+                                minY = cluster.minY,
+                                maxX = cluster.maxX,
+                                maxY = cluster.maxY,
+                                updatedAt = now
+                            )
+                        )
                     }
                 }
 
@@ -86,10 +134,16 @@ class HandwritingSearchManager(
                     searchDao.insertAll(entities)
                     Log.d(TAG, "Indexed ${entities.size} handwriting clusters for note $noteId")
                 }
+
+                // 4. Persist recognized text blocks into .bignote file
+                noteStorageManager.updateNoteTextBlocks(noteId, textBlocks)
             } catch (e: Exception) {
                 Log.w(TAG, "Error indexing note $noteId", e)
+            } finally {
+                activeIndexingJobs.remove(noteId)
             }
         }
+        activeIndexingJobs[noteId] = job
     }
 
     /**
@@ -121,6 +175,82 @@ class HandwritingSearchManager(
         }
 
         results
+    }
+
+    /**
+     * Obtains recognized text for a given collection of strokes.
+     * Tries on-device recognition directly; if unavailable or empty, matches against cached text blocks.
+     */
+    suspend fun getTextForStrokes(noteId: String, strokes: List<Stroke>): String = withContext(Dispatchers.Default) {
+        if (strokes.isEmpty()) return@withContext ""
+
+        // 1. Direct ML Kit recognition on the selected strokes
+        val directText = recognizeStrokesDirect(strokes)
+        if (directText.isNotBlank()) {
+            return@withContext directText
+        }
+
+        // 2. Fallback: match against cached text blocks from Room
+        val cachedEntities = withContext(Dispatchers.IO) { searchDao.getForNote(noteId) }
+        if (cachedEntities.isEmpty()) return@withContext ""
+
+        // Compute stroke selection bounding box
+        var selMinX = Float.MAX_VALUE
+        var selMinY = Float.MAX_VALUE
+        var selMaxX = -Float.MAX_VALUE
+        var selMaxY = -Float.MAX_VALUE
+        for (stroke in strokes) {
+            selMinX = min(selMinX, stroke.minX)
+            selMinY = min(selMinY, stroke.minY)
+            selMaxX = max(selMaxX, stroke.maxX)
+            selMaxY = max(selMaxY, stroke.maxY)
+        }
+
+        // Find overlapping blocks
+        val matchedBlocks = cachedEntities.filter { entity ->
+            !(selMaxX < entity.minX || selMinX > entity.maxX || selMaxY < entity.minY || selMinY > entity.maxY)
+        }.sortedWith(compareBy({ it.minY }, { it.minX }))
+
+        matchedBlocks.joinToString(" ") { it.recognizedText }
+    }
+
+    /**
+     * Direct recognition of arbitrary strokes without persisting to search index.
+     */
+    suspend fun recognizeStrokesDirect(strokes: List<Stroke>): String = withContext(Dispatchers.Default) {
+        if (strokes.isEmpty()) return@withContext ""
+        val clusters = StrokeClusterer.clusterStrokes("direct_rec", strokes)
+        val textList = mutableListOf<String>()
+        for (cluster in clusters) {
+            val txt = recognitionEngine.recognizeCluster(cluster)
+            if (!txt.isNullOrBlank()) {
+                textList.add(txt)
+            }
+        }
+        textList.joinToString(" ")
+    }
+
+    /**
+     * Gets all text blocks currently indexed for a note.
+     * Falls back to reading directly from the .bignote document file if Room cache is empty.
+     */
+    suspend fun getTextBlocks(noteId: String): List<RecognizedTextBlock> = withContext(Dispatchers.IO) {
+        val roomBlocks = searchDao.getForNote(noteId).map { entity ->
+            RecognizedTextBlock(
+                clusterId = entity.clusterId,
+                text = entity.recognizedText,
+                minX = entity.minX,
+                minY = entity.minY,
+                maxX = entity.maxX,
+                maxY = entity.maxY,
+                updatedAt = entity.updatedAt
+            )
+        }
+        if (roomBlocks.isNotEmpty()) {
+            roomBlocks
+        } else {
+            noteStorageManager.loadNote(noteId)?.textBlocks ?: emptyList()
+        }
     }
 
     suspend fun deleteNote(noteId: String) = withContext(Dispatchers.IO) {

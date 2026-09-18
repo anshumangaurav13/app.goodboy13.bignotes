@@ -17,7 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
-import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -39,14 +39,14 @@ import kotlin.math.roundToInt
 /**
  * Bidirectional swipe-to-reveal container:
  * - Swiping left reveals the red Delete button with 3-second blinking confirmation.
- * - Swiping right reveals a custom action (e.g. PDF Export) on the left.
+ * - Swiping right reveals a custom action (e.g. PDF / Markdown Export) on the left.
  */
 @Composable
 fun SwipeToRevealItem(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
     onActionRight: (() -> Unit)? = null,
-    actionRightIcon: ImageVector = Icons.Default.PictureAsPdf,
+    actionRightIcon: ImageVector = Icons.Default.Share,
     actionRightColor: Color = Color(0xFF0284C7),
     revealWidthDp: Int = 48,
     shape: RoundedCornerShape = RoundedCornerShape(6.dp),

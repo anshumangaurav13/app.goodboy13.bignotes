@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,8 +43,10 @@ import com.antigrav.bignotes.core.model.PaperColor
 import com.antigrav.bignotes.core.model.PressureCurveDefaults
 import com.antigrav.bignotes.core.model.VelocityCurveDefaults
 import com.antigrav.bignotes.ui.components.BezierCurveGraph
+import com.antigrav.bignotes.ui.theme.CustomIcons
 import com.antigrav.bignotes.ui.theme.InkPalette
 import com.antigrav.bignotes.ui.theme.ThemeConfig
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private data class TestStrokePoint(val x: Float, val y: Float, val width: Float)
@@ -72,12 +75,6 @@ enum class SettingsCategory(
         Icons.Default.TouchApp,
         Color(0xFFF59E0B)
     ),
-    APPEARANCE(
-        "Appearance",
-        "Dark / light mode",
-        Icons.Default.Palette,
-        Color(0xFFEC4899)
-    ),
     BACKUP(
         "Backup & Storage",
         "Auto-snapshot, backup folder, timeline",
@@ -89,6 +86,12 @@ enum class SettingsCategory(
         "Offline recognition model, search index",
         Icons.Default.Search,
         Color(0xFF8B5CF6)
+    ),
+    HELP(
+        "Help & Guide",
+        "Tools, gestures, export, search & shortcuts",
+        Icons.AutoMirrored.Outlined.HelpOutline,
+        Color(0xFF3B82F6)
     )
 }
 
@@ -129,7 +132,7 @@ fun SettingsDialog(
     initialCategory: SettingsCategory? = null,
     onDismiss: () -> Unit
 ) {
-    var currentCategory by remember { mutableStateOf<SettingsCategory?>(initialCategory) }
+    var currentCategory by remember(initialCategory) { mutableStateOf<SettingsCategory?>(initialCategory) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -232,6 +235,71 @@ fun SettingsDialog(
                                 .verticalScroll(rememberScrollState())
                         ) {
                             Spacer(modifier = Modifier.height(2.dp))
+
+                            // Color Mode Switch (Elevated directly to root settings menu)
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onThemeConfigChange(themeConfig.copy(isDark = !themeConfig.isDark))
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Color(0xFFEC4899)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = if (themeConfig.isDark) Icons.Default.DarkMode else Icons.Default.LightMode,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(12.dp))
+
+                                        Column {
+                                            Text(
+                                                text = if (themeConfig.isDark) "Dark Mode" else "Light Mode",
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 14.sp
+                                                ),
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = if (themeConfig.isDark) "Dark paper canvas" else "Natural light paper canvas",
+                                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+
+                                    Switch(
+                                        checked = themeConfig.isDark,
+                                        onCheckedChange = { onThemeConfigChange(themeConfig.copy(isDark = it)) },
+                                        modifier = Modifier.scale(0.8f)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
 
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
@@ -347,10 +415,6 @@ fun SettingsDialog(
                                     multiFingerGesturesEnabled = multiFingerGesturesEnabled,
                                     onMultiFingerGesturesEnabledChange = onMultiFingerGesturesEnabledChange
                                 )
-                                SettingsCategory.APPEARANCE -> AppearanceDetail(
-                                    themeConfig = themeConfig,
-                                    onThemeConfigChange = onThemeConfigChange
-                                )
                                 SettingsCategory.BACKUP -> BackupDetail(
                                     backupFolderDisplayName = backupFolderDisplayName,
                                     isBackupFolderConfigured = isBackupFolderConfigured,
@@ -367,6 +431,7 @@ fun SettingsDialog(
                                     modelStatus = modelDownloadStatus,
                                     onDownloadModel = onDownloadModel
                                 )
+                                SettingsCategory.HELP -> HelpGuideDetail()
                             }
                         }
                     }
@@ -890,43 +955,179 @@ private fun GesturesDetail(
 }
 
 @Composable
-private fun AppearanceDetail(
-    themeConfig: ThemeConfig,
-    onThemeConfigChange: (ThemeConfig) -> Unit
+private fun HelpGuideDetail() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        SectionHeader("WRITING & INKING")
+        HelpItemCard(
+            icon = CustomIcons.FountainPen,
+            title = "Fountain Pen & Pencil",
+            description = "Fountain Pen provides smooth, expressive pressure-sensitive ink with velocity thinning. The Textured Pencil gives responsive sketching and shading. Quickly toggle between 6 preset line sizes (1 to 12) and curated colors."
+        )
+        HelpItemCard(
+            icon = CustomIcons.Highlighter,
+            title = "Highlighter Tool",
+            description = "Semi-transparent fluorescent chisel highlighter designed to emphasize handwritten notes and diagrams while maintaining full legibility of ink lines underneath."
+        )
+        HelpItemCard(
+            icon = Icons.Default.TouchApp,
+            title = "Stylus vs. Finger Gestures",
+            description = "Your S Pen / stylus is reserved exclusively for writing, sketching, and lasso selection with complete palm rejection. Use fingers to smoothly pan the infinite canvas, scroll, and pinch-to-zoom."
+        )
+        HelpItemCard(
+            icon = Icons.Default.ChangeHistory,
+            title = "QuickShape Snapping",
+            description = "Draw lines, rectangles, circles, ellipses, triangles, or stars and hold your stylus still at the end of the stroke. BigNotes automatically snaps your stroke into a crisp geometric shape."
+        )
+        HelpItemCard(
+            icon = Icons.Default.Tune,
+            title = "Pressure & Velocity Bézier Curves",
+            description = "Fine-tune stylus pressure response and calligraphic velocity thinning using the interactive 4x4 Bézier curve graph in Settings, with real-time feedback on the live test pad."
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        SectionHeader("EDITING & LASSO")
+        HelpItemCard(
+            icon = Icons.Default.Gesture,
+            title = "Lasso Selection & Moving",
+            description = "Circle any strokes or drawings with the Lasso tool. Drag inside the selection box to reposition elements anywhere on the canvas."
+        )
+        HelpItemCard(
+            icon = Icons.Default.ContentCopy,
+            title = "Copy as Text (Offline OCR)",
+            description = "Select your handwriting with the Lasso and tap 'Copy as Text' in the floating toolbar. BigNotes uses the on-device ML Kit engine to transcribe handwriting directly to your clipboard."
+        )
+        HelpItemCard(
+            icon = Icons.Default.ContentCut,
+            title = "Duplicate & Delete",
+            description = "Quickly clone or delete selected stroke clusters using the floating action controls on any active lasso selection."
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        SectionHeader("HANDWRITING SEARCH & RECOGNITION")
+        HelpItemCard(
+            icon = Icons.Default.Search,
+            title = "Instant Offline Search",
+            description = "Type any keyword into the sidebar search bar to search across all your handwritten notes. Search operates entirely offline on your device with zero cloud latency."
+        )
+        HelpItemCard(
+            icon = Icons.Default.FindInPage,
+            title = "Jump-to-Canvas Highlighting",
+            description = "Tap any search match in the sidebar to open that note and smoothly pan the canvas right to that stroke, highlighted with a temporary bounding box."
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        SectionHeader("SHARING & EXPORT")
+        HelpItemCard(
+            icon = Icons.Default.Share,
+            title = "Share Button & Sidebar Swipe",
+            description = "Tap the Share icon in the top toolbar or swipe right on any note item in the sidebar list to open the unified Share & Export dialog."
+        )
+        HelpItemCard(
+            icon = Icons.Default.PictureAsPdf,
+            title = "Searchable PDF Export",
+            description = "Export paginated PDFs (Letter, A4, Legal 14) with an invisible embedded text layer matching your handwriting layout, making notes selectable and searchable in any PDF viewer."
+        )
+        HelpItemCard(
+            icon = Icons.Default.Description,
+            title = "Structured Markdown (.md) Export",
+            description = "Export notes as clean Markdown text organized by recognized handwriting lines and paragraphs for easy archiving or pasting into documentation."
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        SectionHeader("BACKUP & TIMELINE (GIT ARCHITECTURE)")
+        HelpItemCard(
+            icon = Icons.Default.Folder,
+            title = "Automated Deduplicated Snapshots",
+            description = "Select a storage folder via Android SAF. BigNotes automatically creates deduplicated point-in-time snapshots when the app is minimized without wasting disk space."
+        )
+        HelpItemCard(
+            icon = Icons.Default.History,
+            title = "Point-in-Time Restore & Cherry-Pick",
+            description = "Open the Backup Timeline in Settings to view previous snapshots. Roll back the entire notebook or cherry-pick individual notes to restore."
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        SectionHeader("GESTURES & SHORTCUTS")
+        HelpItemCard(
+            icon = Icons.Default.Undo,
+            title = "2-Finger & 3-Finger Tap",
+            description = "Tap two fingers anywhere on the canvas to Undo. Tap three fingers to Redo. Can be toggled in Gestures settings."
+        )
+        HelpItemCard(
+            icon = Icons.Default.Fullscreen,
+            title = "Distraction-Free Fullscreen",
+            description = "Tap the sidebar toggle button in the top toolbar to hide folders and notes, expanding the inking canvas across the full screen."
+        )
+        HelpItemCard(
+            icon = Icons.Default.DeleteSweep,
+            title = "Safe Note Deletion",
+            description = "Swipe left on any note in the sidebar to reveal the delete button. The button blinks for 3 seconds before automatically snapping shut if unconfirmed."
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun HelpItemCard(
+    icon: ImageVector,
+    title: String,
+    description: String
 ) {
-    SectionHeader("COLOR MODE")
-    SettingsCard {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.Top
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
-                    imageVector = if (themeConfig.isDark) Icons.Default.DarkMode else Icons.Default.LightMode,
+                    imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
-                    Text(
-                        text = if (themeConfig.isDark) "Dark Mode" else "Light Mode",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = if (themeConfig.isDark) "Dark paper canvas" else "Natural light paper canvas",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                }
             }
-            Switch(
-                checked = themeConfig.isDark,
-                onCheckedChange = { onThemeConfigChange(themeConfig.copy(isDark = it)) },
-                modifier = Modifier.scale(0.8f)
-            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                )
+            }
         }
     }
 }

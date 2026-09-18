@@ -98,9 +98,15 @@ class NoteStorageManager(private val context: Context) {
         strokes: List<Stroke>,
         zoom: Float = 1f,
         scrollY: Float = 0f,
-        images: List<com.antigrav.bignotes.core.model.CanvasImage> = emptyList()
+        images: List<com.antigrav.bignotes.core.model.CanvasImage> = emptyList(),
+        textBlocks: List<RecognizedTextBlock> = emptyList()
     ): File {
         val file = getFileForNote(note.id)
+        val finalBlocks = if (textBlocks.isNotEmpty()) {
+            textBlocks
+        } else {
+            loadNote(note.id)?.textBlocks ?: emptyList()
+        }
         val doc = BigNoteDocument(
             noteId = note.id,
             folderId = note.folderId,
@@ -110,7 +116,8 @@ class NoteStorageManager(private val context: Context) {
             zoom = zoom,
             scrollY = scrollY,
             strokes = strokes,
-            images = images
+            images = images,
+            textBlocks = finalBlocks
         )
         val bytes = BigNoteBinaryFormat.serialize(doc)
         file.writeBytes(bytes)
@@ -151,6 +158,21 @@ class NoteStorageManager(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        }
+    }
+
+    fun updateNoteTextBlocks(noteId: String, textBlocks: List<RecognizedTextBlock>): Boolean {
+        val file = getFileForNote(noteId)
+        if (!file.exists()) return false
+        return try {
+            val doc = loadNote(noteId) ?: return false
+            val updated = doc.copy(textBlocks = textBlocks)
+            val bytes = BigNoteBinaryFormat.serialize(updated)
+            file.writeBytes(bytes)
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
     }
 
@@ -304,5 +326,42 @@ class NoteStorageManager(private val context: Context) {
             e.printStackTrace()
             null
         }
+    }
+
+    /**
+     * Seeds initial "Main" folder and "Note 1" on a brand-new installation.
+     * If folders.json already exists (even if empty because user deleted all folders),
+     * it respects user choices and will not re-create deleted items.
+     */
+    fun initializeDefaultWorkspaceIfEmpty(): Pair<List<com.antigrav.bignotes.ui.model.FolderItem>, List<NoteItem>> {
+        val foldersFile = File(context.filesDir, "folders.json")
+        val indexFile = File(context.filesDir, "notes_index.json")
+        val savedNotes = listSavedNoteIds()
+
+        if (!foldersFile.exists() && !indexFile.exists() && savedNotes.isEmpty()) {
+            val defaultFolder = com.antigrav.bignotes.ui.model.FolderItem(
+                id = "folder_main",
+                name = "Main",
+                noteCount = 1,
+                createdAt = System.currentTimeMillis()
+            )
+            val defaultNote = NoteItem(
+                id = "note_1",
+                folderId = "folder_main",
+                title = "Note 1",
+                previewText = "Empty note",
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(),
+                maxY = 0f,
+                strokeCount = 0
+            )
+            saveFolders(listOf(defaultFolder))
+            saveNote(defaultNote, emptyList())
+            return Pair(listOf(defaultFolder), listOf(defaultNote))
+        }
+
+        val loadedFolders = loadFolders() ?: emptyList()
+        val loadedNotes = loadAllNotesMetadataFast()
+        return Pair(loadedFolders, loadedNotes)
     }
 }

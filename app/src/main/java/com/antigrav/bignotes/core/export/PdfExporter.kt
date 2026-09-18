@@ -6,6 +6,7 @@ import android.graphics.pdf.PdfDocument
 import com.antigrav.bignotes.core.model.PaperColor
 import com.antigrav.bignotes.core.model.Stroke
 import com.antigrav.bignotes.core.model.StrokePoint
+import com.antigrav.bignotes.core.storage.RecognizedTextBlock
 import com.antigrav.bignotes.ui.theme.InkPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,7 +27,8 @@ object PdfExporter {
         strokes: List<Stroke>,
         paperColor: PaperColor = PaperColor.WHITE,
         options: PdfExportOptions = PdfExportOptions(),
-        images: List<com.antigrav.bignotes.core.model.CanvasImage> = emptyList()
+        images: List<com.antigrav.bignotes.core.model.CanvasImage> = emptyList(),
+        textBlocks: List<RecognizedTextBlock> = emptyList()
     ): File = withContext(Dispatchers.IO) {
         val exportDir = File(context.cacheDir, "exports").apply { if (!exists()) mkdirs() }
         val sanitizedTitle = noteTitle.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifEmpty { "BigNote" }
@@ -79,6 +81,18 @@ object PdfExporter {
 
                 // 1. Draw pure white background
                 canvas.drawRect(0f, 0f, widthPt.toFloat(), heightPt.toFloat(), bgPaint)
+
+                // 1.5 Embed invisible searchable text layer if requested
+                if (options.embedSearchableText && textBlocks.isNotEmpty()) {
+                    drawSearchableTextLayer(
+                        canvas = canvas,
+                        textBlocks = textBlocks,
+                        worldTopY = partition.worldTopY,
+                        worldBottomY = partition.worldBottomY,
+                        marginPt = marginPt,
+                        scale = scale
+                    )
+                }
 
                 // 2. Render strokes with default slate light mode colors (clipped cleanly to printable bounds)
                 canvas.save()
@@ -388,6 +402,43 @@ object PdfExporter {
 
             canvas.restore()
             bitmap.recycle()
+        }
+    }
+
+    private fun drawSearchableTextLayer(
+        canvas: Canvas,
+        textBlocks: List<RecognizedTextBlock>,
+        worldTopY: Float,
+        worldBottomY: Float,
+        marginPt: Float,
+        scale: Float
+    ) {
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+        }
+
+        for (block in textBlocks) {
+            val blockCenterY = (block.minY + block.maxY) * 0.5f
+            if (blockCenterY < worldTopY || blockCenterY >= worldBottomY) continue
+
+            val blockLeftPt = marginPt + (block.minX * scale)
+            val blockTopPt = marginPt + ((block.minY - worldTopY) * scale)
+            val blockRightPt = marginPt + (block.maxX * scale)
+            val blockBottomPt = marginPt + ((block.maxY - worldTopY) * scale)
+
+            val blockHeightPt = maxOf(8f, blockBottomPt - blockTopPt)
+            val blockWidthPt = maxOf(10f, blockRightPt - blockLeftPt)
+
+            textPaint.textSize = (blockHeightPt * 0.75f).coerceIn(6f, 72f)
+            textPaint.textScaleX = 1.0f
+
+            val measuredWidth = textPaint.measureText(block.text)
+            if (measuredWidth > 0f) {
+                textPaint.textScaleX = (blockWidthPt / measuredWidth).coerceIn(0.5f, 2.5f)
+            }
+
+            val baselineY = blockTopPt + (blockHeightPt * 0.75f)
+            canvas.drawText(block.text, blockLeftPt, baselineY, textPaint)
         }
     }
 }

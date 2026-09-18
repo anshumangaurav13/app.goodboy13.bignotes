@@ -52,6 +52,7 @@ fun NoteToolbar(
     onRedo: () -> Unit,
     onRenameCurrentNote: ((String) -> Unit)? = null,
     onInsertImage: (() -> Unit)? = null,
+    onExportNote: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var lastEraserMode by remember { mutableStateOf(ActiveTool.PRECISION_ERASER) }
@@ -397,6 +398,21 @@ fun NoteToolbar(
                             Icon(
                                 imageVector = Icons.Default.AddPhotoAlternate,
                                 contentDescription = "Insert Image",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+
+                    // Share / Export Note
+                    if (onExportNote != null) {
+                        IconButton(
+                            onClick = onExportNote,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share & Export Note",
                                 modifier = Modifier.size(18.dp),
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )

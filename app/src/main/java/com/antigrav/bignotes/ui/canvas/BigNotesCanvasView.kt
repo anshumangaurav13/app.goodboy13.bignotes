@@ -7,10 +7,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +28,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -57,6 +62,10 @@ fun BigNotesCanvasView(
     pageFormat: PageFormat = PageFormat.A4,
     showPageSeparators: Boolean = true,
     inkBleedConfig: com.antigrav.bignotes.core.model.InkBleedConfig = com.antigrav.bignotes.core.model.InkBleedConfig.DEFAULT,
+    isCanvasEnabled: Boolean = true,
+    hasFolders: Boolean = true,
+    onAddNote: () -> Unit = {},
+    onAddFolder: () -> Unit = {},
     onUndoRedoStateChanged: (canUndo: Boolean, canRedo: Boolean) -> Unit,
     onZoomChanged: (Float) -> Unit,
     onCanvasBound: (SketchCanvasView) -> Unit,
@@ -67,6 +76,7 @@ fun BigNotesCanvasView(
     onSelectedImageChange: ((com.antigrav.bignotes.core.model.CanvasImage?) -> Unit)? = null,
     activeSearchHit: com.antigrav.bignotes.core.search.model.SearchHit? = null,
     onDismissSearchHit: (() -> Unit)? = null,
+    onCopySelectedStrokesAsText: ((List<Stroke>) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var reticle by remember { mutableStateOf(ReticleState()) }
@@ -153,9 +163,13 @@ fun BigNotesCanvasView(
 
                     canvasViewRef = this
                     onCanvasBound(this)
+                    this.isEnabled = isCanvasEnabled
                 }
             },
             update = { view ->
+                if (view.isEnabled != isCanvasEnabled) {
+                    view.isEnabled = isCanvasEnabled
+                }
                 view.activeTool = activeTool
                 view.bezierConfig = bezierConfig
                 view.velocityBezierConfig = velocityBezierConfig
@@ -315,11 +329,11 @@ fun BigNotesCanvasView(
                 bottom + 8f
             }
             val pillCenterX = (left + right) * 0.5f
-            val pillXDp = with(density) { (pillCenterX - 60f).toDp() }
+            val pillXDp = with(density) { (pillCenterX - 75f).toDp() }
             val pillYDp = with(density) { pillY.toDp() }
 
             val minXDp = 8.dp
-            val maxXDp = (screenConfig.screenWidthDp - 140).dp
+            val maxXDp = (screenConfig.screenWidthDp - 170).dp
             val clampedXDp = pillXDp.coerceIn(minXDp, maxOf(minXDp, maxXDp))
             val clampedYDp = pillYDp.coerceAtLeast(8.dp)
 
@@ -338,6 +352,18 @@ fun BigNotesCanvasView(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier.padding(horizontal = 6.dp)
                 ) {
+                    IconButton(
+                        onClick = { onCopySelectedStrokesAsText?.invoke(selectedStrokes) },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.TextFields,
+                            contentDescription = "Copy as Text",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
                     IconButton(
                         onClick = { view.duplicateSelection() },
                         modifier = Modifier.size(28.dp)
@@ -412,7 +438,7 @@ fun BigNotesCanvasView(
         // 3.8. Active Search Hit Visual Highlight Box
         val searchView = canvasViewRef
         val hit = activeSearchHit
-        if (searchView != null && hit != null) {
+        if (searchView != null && hit != null && isCanvasEnabled) {
             @Suppress("UNUSED_VARIABLE")
             val tick = viewportTick
             val (screenMinX, screenMinY) = searchView.worldToScreen(hit.minX, hit.minY)
@@ -492,7 +518,7 @@ fun BigNotesCanvasView(
 
         // 4. Vertical Fast Scrollbar Overlay on Right Edge
         val canvasView = canvasViewRef
-        if (canvasView != null) {
+        if (canvasView != null && isCanvasEnabled) {
             @Suppress("UNUSED_VARIABLE")
             val tick = viewportTick
             val scrollInfo = canvasView.getVerticalScrollInfo()
@@ -514,6 +540,105 @@ fun BigNotesCanvasView(
                     .align(Alignment.TopEnd)
                     .padding(top = topOffsetDp, bottom = 16.dp)
             )
+        }
+
+        // 5. Disabled Canvas Empty State / Call-to-Action Placeholder
+        if (!isCanvasEnabled) {
+            val contentPaddingStart = with(LocalDensity.current) { viewOffsetX.toDp() }
+            val contentPaddingTop = with(LocalDensity.current) { viewOffsetY.toDp() }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = contentPaddingStart, top = contentPaddingTop),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .widthIn(max = 380.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        if (!hasFolders) {
+                            Icon(
+                                imageVector = Icons.Default.FolderOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(56.dp),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "No Folders Created",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Create a folder first to organize and start taking notes.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Button(
+                                onClick = onAddFolder,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CreateNewFolder,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("New Folder")
+                            }
+                        } else {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.NoteAdd,
+                                contentDescription = null,
+                                modifier = Modifier.size(56.dp),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "No Active Note",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Create a new note to start writing and drawing.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Button(
+                                onClick = onAddNote,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.NoteAdd,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Tap to create a new note")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

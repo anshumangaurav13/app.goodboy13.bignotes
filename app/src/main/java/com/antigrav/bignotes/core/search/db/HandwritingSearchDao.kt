@@ -34,4 +34,15 @@ interface HandwritingSearchDao {
 
     @Query("SELECT COUNT(*) FROM handwriting_index")
     suspend fun count(): Int
+
+    @Query("SELECT MAX(updatedAt) FROM handwriting_index WHERE noteId = :noteId")
+    suspend fun getLastIndexedTimestamp(noteId: String): Long?
+
+    @Query("SELECT noteId, MAX(updatedAt) as lastIndexedAt FROM handwriting_index GROUP BY noteId")
+    suspend fun getAllIndexedNotesTimestamps(): List<NoteIndexTimestamp>
 }
+
+data class NoteIndexTimestamp(
+    val noteId: String,
+    val lastIndexedAt: Long
+)
