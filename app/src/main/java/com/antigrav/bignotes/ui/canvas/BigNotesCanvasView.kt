@@ -59,7 +59,6 @@ fun BigNotesCanvasView(
     viewOffsetY: Float = 0f,
     bezierConfig: BezierControlPoints = com.antigrav.bignotes.core.model.PressureCurveDefaults.STANDARD,
     velocityBezierConfig: BezierControlPoints = com.antigrav.bignotes.core.model.VelocityCurveDefaults.CALLIGRAPHIC,
-    smoothingLevel: Float = 0.0f,
     velocityThinning: Float = 0.60f,
     pageFormat: PageFormat = PageFormat.A4,
     showPageSeparators: Boolean = true,
@@ -121,7 +120,6 @@ fun BigNotesCanvasView(
                     this.activeTool = activeTool
                     this.bezierConfig = bezierConfig
                     this.velocityBezierConfig = velocityBezierConfig
-                    this.smoothingLevel = smoothingLevel
                     this.velocityThinning = velocityThinning
                     this.onStrokeStarted = onStrokeStarted
                     renderer.currentTone = PencilTone.INK_BLACK
@@ -182,7 +180,6 @@ fun BigNotesCanvasView(
                 view.activeTool = activeTool
                 view.bezierConfig = bezierConfig
                 view.velocityBezierConfig = velocityBezierConfig
-                view.smoothingLevel = smoothingLevel
                 view.velocityThinning = velocityThinning
                 view.onStrokeStarted = onStrokeStarted
                 view.renderer.currentBaseWidth = strokeSize

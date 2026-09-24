@@ -366,9 +366,6 @@ fun BigNotesMainScreen(
         )
     }
 
-    val savedSmoothingLevel = remember { prefs.getFloat("smoothing_level", 0.0f) }
-    var smoothingLevel by remember { mutableFloatStateOf(savedSmoothingLevel) }
-
     // Per-note stroke & image persistence in memory
     val noteStrokes = remember { mutableStateMapOf<String, List<Stroke>>() }
     val noteImages = remember { mutableStateMapOf<String, List<CanvasImage>>() }
@@ -764,12 +761,11 @@ fun BigNotesMainScreen(
         }
     }
 
-    // Update stylus pressure curve, velocity curve, and smoothing on canvas
-    LaunchedEffect(pressureBezierConfig, velocityBezierConfig, smoothingLevel, canvasView) {
+    // Update stylus pressure curve and velocity curve on canvas
+    LaunchedEffect(pressureBezierConfig, velocityBezierConfig, canvasView) {
         val view = canvasView ?: return@LaunchedEffect
         view.bezierConfig = pressureBezierConfig
         view.velocityBezierConfig = velocityBezierConfig
-        view.smoothingLevel = smoothingLevel
     }
 
     // Load active note strokes and images asynchronously when note or canvas changes
@@ -882,7 +878,6 @@ fun BigNotesMainScreen(
             viewOffsetY = animatedTopOffsetPx,
             bezierConfig = pressureBezierConfig,
             velocityBezierConfig = velocityBezierConfig,
-            smoothingLevel = smoothingLevel,
             pageFormat = selectedPdfPageFormat,
             showPageSeparators = showPageSeparators,
             penPredictionEnabled = penPredictionEnabled,
@@ -1351,11 +1346,6 @@ fun BigNotesMainScreen(
                     .putFloat("velocity_cp2x", newCurve.cp2x)
                     .putFloat("velocity_cp2y", newCurve.cp2y)
                     .apply()
-            },
-            smoothingLevel = smoothingLevel,
-            onSmoothingLevelChange = {
-                smoothingLevel = it
-                prefs.edit().putFloat("smoothing_level", it).apply()
             },
             backupFolderDisplayName = backupFolderDisplayName,
             isBackupFolderConfigured = backupFolderUriString != null,

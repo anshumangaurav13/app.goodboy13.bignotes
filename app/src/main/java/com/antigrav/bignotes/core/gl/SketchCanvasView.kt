@@ -18,7 +18,6 @@ import com.antigrav.bignotes.core.eraser.EraserEngine
 import com.antigrav.bignotes.core.eraser.SpatialStrokeIndex
 import com.antigrav.bignotes.core.geometry.DabGenerator
 import com.antigrav.bignotes.core.geometry.StrokeTessellator
-import com.antigrav.bignotes.core.filter.*
 import com.antigrav.bignotes.core.history.CanvasAction
 import com.antigrav.bignotes.core.history.UndoRedoManager
 import com.antigrav.bignotes.core.model.*
@@ -291,21 +290,6 @@ class SketchCanvasView @JvmOverloads constructor(
         lastRecordedTimeNanos = monotonicNanos
         return monotonicNanos
     }
-
-    // Velocity-Adaptive EMA Filter for stroke smoothing / stabilization
-    var smoothingLevel: Float = 0.0f
-        set(value) {
-            field = value.coerceIn(0.0f, 1.0f)
-            emaFilter.setSmoothing(field)
-        }
-
-    var velocityWeight: Float = 0.50f
-        set(value) {
-            field = value.coerceIn(0.0f, 1.0f)
-            emaFilter.setVelocityWeight(field)
-        }
-
-    private val emaFilter = com.antigrav.bignotes.core.filter.VelocityAdaptiveEmaFilter(smoothingLevel, velocityWeight)
 
     // In-flight stroke points
     private val activeStrokePoints = mutableListOf<StrokePoint>()
@@ -1031,24 +1015,13 @@ class SketchCanvasView @JvmOverloads constructor(
                             if (lastPoint == null) {
                                 activeStrokePoints.add(StrokePoint(wx, wy, commitPressure, event.eventTime))
                             } else {
-                                val fx: Float
-                                val fy: Float
-                                if (smoothingLevel > 0.01f) {
-                                    val upTimeNanos = getEventTimeNanos(event)
-                                    emaFilter.filter(wx, wy, upTimeNanos)
-                                    fx = emaFilter.filteredX
-                                    fy = emaFilter.filteredY
-                                } else {
-                                    fx = wx
-                                    fy = wy
-                                }
-                                val dist = kotlin.math.hypot((fx - lastPoint.x).toDouble(), (fy - lastPoint.y).toDouble()).toFloat()
+                                val dist = kotlin.math.hypot((wx - lastPoint.x).toDouble(), (wy - lastPoint.y).toDouble()).toFloat()
                                 if (dist >= 0.5f) {
-                                    val curPt = StrokePoint(fx, fy, commitPressure, event.eventTime)
+                                    val curPt = StrokePoint(wx, wy, commitPressure, event.eventTime)
                                     activeStrokePoints.add(curPt)
                                     val gen = liveDabGenerator
                                     if (gen != null) {
-                                        val finalDabs = gen.addPoint(fx, fy, commitPressure)
+                                        val finalDabs = gen.addPoint(wx, wy, commitPressure)
                                         if (finalDabs.isNotEmpty()) {
                                             frontBufferedRenderer?.renderFrontBufferedLayer(
                                                 FrontBufferPacket(dabs = finalDabs, clearBeforeDraw = false)
@@ -1071,7 +1044,6 @@ class SketchCanvasView @JvmOverloads constructor(
                     if (isErasing) {
                         finalizeEraserSession(effectiveEraserMode)
                     } else {
-                        emaFilter.reset()
                         lastPointTimeNanos = 0L
                         lastRecordedTimeNanos = 0L
                         activeStrokePoints.clear()
@@ -1400,7 +1372,6 @@ class SketchCanvasView @JvmOverloads constructor(
         if (!targetPageId.isNullOrEmpty() && targetPageId != currentPageId) {
             currentPageId = targetPageId
         }
-        emaFilter.reset()
         activeStrokePoints.clear()
         lastPointX = wx
         lastPointY = wy
@@ -1410,17 +1381,7 @@ class SketchCanvasView @JvmOverloads constructor(
         lastRecordedTimeNanos = timeNanos
         smoothedStylusSpeed = 0f
 
-        val fx: Float
-        val fy: Float
-        if (smoothingLevel > 0.01f) {
-            emaFilter.filter(wx, wy, timeNanos)
-            fx = emaFilter.filteredX
-            fy = emaFilter.filteredY
-        } else {
-            fx = wx
-            fy = wy
-        }
-        val pt = StrokePoint(fx, fy, pressure, time)
+        val pt = StrokePoint(wx, wy, pressure, time)
         activeStrokePoints.add(pt)
 
         shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
@@ -1440,7 +1401,7 @@ class SketchCanvasView @JvmOverloads constructor(
         val stepDist = StrokeTessellator.getStepDistance(renderer.currentBaseWidth, isInk = isInk, isHighlighter = isHighlighter)
         val gen = DabGenerator(stepDist)
         liveDabGenerator = gen
-        val dabs = gen.start(fx, fy, pressure)
+        val dabs = gen.start(wx, wy, pressure)
         frontBufferedRenderer?.renderFrontBufferedLayer(
             FrontBufferPacket(dabs = dabs, clearBeforeDraw = true)
         )
@@ -1546,20 +1507,10 @@ class SketchCanvasView @JvmOverloads constructor(
                 }
                 val finalBakedPressure = (hBakedPressure * (thinning * thinning)).coerceIn(0.01f, 1.0f)
 
-                val fx: Float
-                val fy: Float
-                if (smoothingLevel > 0.01f) {
-                    emaFilter.filter(hwx, hwy, hTimeNanos)
-                    fx = emaFilter.filteredX
-                    fy = emaFilter.filteredY
-                } else {
-                    fx = hwx
-                    fy = hwy
-                }
                 activeStrokePoints.add(
-                    StrokePoint(fx, fy, finalBakedPressure, hTime)
+                    StrokePoint(hwx, hwy, finalBakedPressure, hTime)
                 )
-                newDabs.addAll(gen.addPoint(fx, fy, finalBakedPressure))
+                newDabs.addAll(gen.addPoint(hwx, hwy, finalBakedPressure))
             }
 
             // Current event point
@@ -1590,18 +1541,8 @@ class SketchCanvasView @JvmOverloads constructor(
             }
             val finalEffPressure = (effPressure * (thinning * thinning)).coerceIn(0.01f, 1.0f)
 
-            val curFx: Float
-            val curFy: Float
-            if (smoothingLevel > 0.01f) {
-                emaFilter.filter(wx, wy, curTimeNanos)
-                curFx = emaFilter.filteredX
-                curFy = emaFilter.filteredY
-            } else {
-                curFx = wx
-                curFy = wy
-            }
-            activeStrokePoints.add(StrokePoint(curFx, curFy, finalEffPressure, event.eventTime))
-            newDabs.addAll(gen.addPoint(curFx, curFy, finalEffPressure))
+            activeStrokePoints.add(StrokePoint(wx, wy, finalEffPressure, event.eventTime))
+            newDabs.addAll(gen.addPoint(wx, wy, finalEffPressure))
 
             if (newDabs.isNotEmpty()) {
                 frontBufferedRenderer?.renderFrontBufferedLayer(
@@ -1611,7 +1552,6 @@ class SketchCanvasView @JvmOverloads constructor(
     }
 
     private fun finalizeCurrentStroke() {
-        emaFilter.reset()
         lastPointTimeNanos = 0L
         lastRecordedTimeNanos = 0L
         onPenContactChanged?.invoke(false)

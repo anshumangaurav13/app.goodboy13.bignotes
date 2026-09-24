@@ -65,7 +65,7 @@ enum class SettingsCategory(
     ),
     PEN_FEEL(
         "Pen Feel & Curves",
-        "Pressure curve, velocity thinning, smoothing",
+        "Pressure curve and velocity thinning",
         Icons.Default.Edit,
         Color(0xFF6366F1)
     ),
@@ -103,8 +103,6 @@ fun SettingsDialog(
     onPressureBezierChange: (BezierControlPoints) -> Unit,
     velocityBezier: BezierControlPoints,
     onVelocityBezierChange: (BezierControlPoints) -> Unit,
-    smoothingLevel: Float,
-    onSmoothingLevelChange: (Float) -> Unit,
     showPageSeparators: Boolean = true,
     onShowPageSeparatorsChange: (Boolean) -> Unit = {},
     gridConfig: GridConfig = GridConfig(),
@@ -411,9 +409,7 @@ fun SettingsDialog(
                                     pressureBezier = pressureBezier,
                                     onPressureBezierChange = onPressureBezierChange,
                                     velocityBezier = velocityBezier,
-                                    onVelocityBezierChange = onVelocityBezierChange,
-                                    smoothingLevel = smoothingLevel,
-                                    onSmoothingLevelChange = onSmoothingLevelChange
+                                    onVelocityBezierChange = onVelocityBezierChange
                                 )
                                 SettingsCategory.GESTURES -> GesturesDetail(
                                     multiFingerGesturesEnabled = multiFingerGesturesEnabled,
@@ -722,9 +718,7 @@ private fun PenFeelDetail(
     pressureBezier: BezierControlPoints,
     onPressureBezierChange: (BezierControlPoints) -> Unit,
     velocityBezier: BezierControlPoints,
-    onVelocityBezierChange: (BezierControlPoints) -> Unit,
-    smoothingLevel: Float,
-    onSmoothingLevelChange: (Float) -> Unit
+    onVelocityBezierChange: (BezierControlPoints) -> Unit
 ) {
     var testStrokes by remember { mutableStateOf(listOf<List<TestStrokePoint>>()) }
     var currentTestStroke by remember { mutableStateOf<List<TestStrokePoint>>(emptyList()) }
@@ -779,34 +773,6 @@ private fun PenFeelDetail(
                 handle2Color = Color(0xFFE11D48)
             )
         }
-    }
-
-    Spacer(modifier = Modifier.height(10.dp))
-
-    SectionHeader("STABILIZATION & SMOOTHING")
-    SettingsCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "Stroke Smoothing",
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "${(smoothingLevel * 100).roundToInt()}%",
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        Slider(
-            value = smoothingLevel,
-            onValueChange = onSmoothingLevelChange,
-            valueRange = 0.0f..1.0f,
-            modifier = Modifier.fillMaxWidth().height(24.dp)
-        )
     }
 
     Spacer(modifier = Modifier.height(10.dp))
