@@ -83,6 +83,12 @@ import com.antigrav.bignotes.ui.theme.InkPalette
 import com.antigrav.bignotes.ui.theme.ThemeConfig
 import com.antigrav.bignotes.ui.toolbar.NoteToolbar
 import kotlin.math.roundToInt
+import com.antigrav.bignotes.core.math.model.MathOverlayState
+import com.antigrav.bignotes.core.math.model.MathResult
+import com.antigrav.bignotes.core.math.normalizer.MathNormalizer
+import com.antigrav.bignotes.core.math.evaluator.MathEvaluator
+import com.antigrav.bignotes.core.math.font.VectorStrokeFont
+import com.antigrav.bignotes.core.math.spatial.SpatialMathParser
 
 const val CANONICAL_PAGE_WIDTH = 1200f
 
@@ -221,6 +227,12 @@ fun BigNotesMainScreen(
     }
     var strictStylusMode by remember {
         mutableStateOf(prefs.getBoolean("strict_stylus_mode", true))
+    }
+    var penPredictionEnabled by remember {
+        mutableStateOf(prefs.getBoolean("pen_prediction_enabled", true))
+    }
+    var isFoldersVisible by remember {
+        mutableStateOf(prefs.getBoolean("is_folders_visible", true))
     }
     var multiFingerGesturesEnabled by remember {
         mutableStateOf(prefs.getBoolean("multi_finger_gestures", true))
@@ -372,6 +384,7 @@ fun BigNotesMainScreen(
     val modelDownloadStatus by handwritingSearchManager.downloadStatus.collectAsState()
     var searchHits by remember { mutableStateOf<Map<String, List<SearchHit>>>(emptyMap()) }
     var activeSearchHit by remember { mutableStateOf<SearchHit?>(null) }
+    var activeMathOverlayState by remember { mutableStateOf<MathOverlayState?>(null) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
 
     val onSearchQueryChanged: (String) -> Unit = { query ->
@@ -764,6 +777,7 @@ fun BigNotesMainScreen(
         val view = canvasView ?: return@LaunchedEffect
         val noteId = selectedNoteId
         selectedCanvasImage = null
+        activeMathOverlayState = null
         if (noteId == null) {
             view.loadPage("empty", emptyList(), images = emptyList())
         } else {
@@ -833,7 +847,7 @@ fun BigNotesMainScreen(
     }
 
     val density = LocalDensity.current
-    val sidebarWidthDp = SidebarLayoutDefaults.totalWidth(configuration.screenWidthDp, isPortrait)
+    val sidebarWidthDp = SidebarLayoutDefaults.totalWidth(configuration.screenWidthDp, isPortrait, isFoldersVisible)
     val sidebarWidthPx = with(density) { sidebarWidthDp.toPx() }
 
     val animatedSidebarWidthPx by animateFloatAsState(
@@ -854,7 +868,7 @@ fun BigNotesMainScreen(
         label = "statusBarHeight"
     )
 
-    val animatedTopOffsetPx = with(density) { (animatedStatusBarDp + 50.dp).toPx() }
+    val animatedTopOffsetPx = with(density) { (animatedStatusBarDp + 54.dp).toPx() }
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -871,6 +885,7 @@ fun BigNotesMainScreen(
             smoothingLevel = smoothingLevel,
             pageFormat = selectedPdfPageFormat,
             showPageSeparators = showPageSeparators,
+            penPredictionEnabled = penPredictionEnabled,
             inkBleedConfig = inkBleedConfig,
             isCanvasEnabled = selectedNoteId != null,
             hasFolders = folders.isNotEmpty(),
@@ -908,6 +923,7 @@ fun BigNotesMainScreen(
                 boundView.renderer.showPageSeparators = showPageSeparators
                 boundView.gridConfig = gridConfig
                 boundView.strictStylusMode = strictStylusMode
+                boundView.penPredictionEnabled = penPredictionEnabled
                 boundView.multiFingerGesturesEnabled = multiFingerGesturesEnabled
                 boundView.shapeSnappingEnabled = shapeSnappingEnabled
                 boundView.shapeSnapDelayMs = shapeSnapDelayMs
@@ -958,6 +974,96 @@ fun BigNotesMainScreen(
                         }
                     }
                 }
+            },
+            onSolveMathSelectedStrokes = { strokes ->
+                val noteId = selectedNoteId
+                if (strokes.isNotEmpty()) {
+                    coroutineScope.launch {
+                        val rawText = SpatialMathParser.parseAndRecognize(strokes) { subStrokes ->
+                            handwritingSearchManager.recognizeStrokesDirect(subStrokes)
+                                .ifBlank {
+                                    if (noteId != null) handwritingSearchManager.getTextForStrokes(noteId, subStrokes) else ""
+                                }
+                        }
+
+                        if (rawText.isBlank()) {
+                            Toast.makeText(context, "No handwriting recognized to solve", Toast.LENGTH_SHORT).show()
+                            return@launch
+                        }
+
+                        val normalized = MathNormalizer.normalize(rawText)
+                        if (normalized.isBlank()) {
+                            Toast.makeText(context, "No mathematical expression found in \"$rawText\"", Toast.LENGTH_SHORT).show()
+                            return@launch
+                        }
+
+                        val mathResult = MathEvaluator.evaluate(normalized)
+
+                        var minX = Float.MAX_VALUE
+                        var minY = Float.MAX_VALUE
+                        var maxX = -Float.MAX_VALUE
+                        var maxY = -Float.MAX_VALUE
+                        for (s in strokes) {
+                            minX = minOf(minX, s.minX)
+                            minY = minOf(minY, s.minY)
+                            maxX = maxOf(maxX, s.maxX)
+                            maxY = maxOf(maxY, s.maxY)
+                        }
+                        val worldBounds = android.graphics.RectF(minX, minY, maxX, maxY)
+
+                        activeMathOverlayState = MathOverlayState(
+                            expression = normalized,
+                            result = mathResult,
+                            worldBounds = worldBounds,
+                            sourceStrokes = strokes
+                        )
+                    }
+                }
+            },
+            mathOverlayState = activeMathOverlayState,
+            onInsertMathAnswer = {
+                val overlay = activeMathOverlayState
+                if (overlay != null && overlay.result is MathResult.Success && overlay.sourceStrokes.isNotEmpty()) {
+                    val sampleStroke = overlay.sourceStrokes.first()
+                    val tone = sampleStroke.tone
+                    val colorRgb = sampleStroke.colorRgb
+                    val isInk = sampleStroke.isInk
+                    val baseWidth = sampleStroke.baseWidth
+
+                    val bounds = overlay.worldBounds
+                    val height = (bounds.bottom - bounds.top).coerceIn(24f, 120f)
+                    val centerY = (bounds.top + bounds.bottom) * 0.5f
+
+                    val insertText = if (overlay.expression.endsWith("=")) " ${overlay.result.formattedResult}" else " = ${overlay.result.formattedResult}"
+                    val startX = bounds.right + height * 0.25f
+
+                    val generatedStrokes = VectorStrokeFont.generateStrokesForText(
+                        text = insertText,
+                        startX = startX,
+                        centerY = centerY,
+                        targetHeight = height,
+                        baseWidth = baseWidth,
+                        tone = tone,
+                        colorRgb = colorRgb,
+                        isInk = isInk
+                    )
+
+                    canvasView?.insertStrokes(generatedStrokes, selectAfterAdd = false)
+                    activeMathOverlayState = null
+                    Toast.makeText(context, "Inserted \"$insertText\"", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onCopyMathAnswer = {
+                val overlay = activeMathOverlayState
+                if (overlay != null && overlay.result is MathResult.Success) {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText("Math Result", overlay.result.formattedResult)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(context, "Copied: ${overlay.result.formattedResult}", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismissMathOverlay = {
+                activeMathOverlayState = null
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -1058,6 +1164,7 @@ fun BigNotesMainScreen(
                 canRedo = canRedo,
                 onUndo = { canvasView?.undo() },
                 onRedo = { canvasView?.redo() },
+                onResetZoom = { canvasView?.resetZoom() },
                 onRenameCurrentNote = { newTitle ->
                     currentNote?.let { target ->
                         val now = System.currentTimeMillis()
@@ -1186,6 +1293,12 @@ fun BigNotesMainScreen(
                 },
                 onAddFolder = createNewFolder,
                 onAddNote = createNewNote,
+                isFoldersVisible = isFoldersVisible,
+                onToggleFoldersVisible = {
+                    val next = !isFoldersVisible
+                    isFoldersVisible = next
+                    prefs.edit().putBoolean("is_folders_visible", next).apply()
+                },
                 onOpenSettings = {
                     activeSettingsCategory = null
                     showSettingsDialog = true
@@ -1283,6 +1396,12 @@ fun BigNotesMainScreen(
                 strictStylusMode = mode
                 canvasView?.strictStylusMode = mode
                 prefs.edit().putBoolean("strict_stylus_mode", mode).apply()
+            },
+            penPredictionEnabled = penPredictionEnabled,
+            onPenPredictionEnabledChange = { enabled ->
+                penPredictionEnabled = enabled
+                canvasView?.penPredictionEnabled = enabled
+                prefs.edit().putBoolean("pen_prediction_enabled", enabled).apply()
             },
             multiFingerGesturesEnabled = multiFingerGesturesEnabled,
             onMultiFingerGesturesEnabledChange = { enabled ->

@@ -110,6 +110,7 @@ class SketchCanvasView @JvmOverloads constructor(
 
     private var frontBufferedRenderer: GLFrontBufferedRenderer<FrontBufferPacket>? = null
     private var motionPredictor: MotionEventPredictor? = null
+    var penPredictionEnabled: Boolean = true
 
     // Active tool and eraser state
     var activeTool: ActiveTool = ActiveTool.PENCIL
@@ -965,6 +966,12 @@ class SketchCanvasView @JvmOverloads constructor(
                 return true
             }
 
+            if (penPredictionEnabled) {
+                try {
+                    requestUnbufferedDispatch(event)
+                } catch (e: Exception) {}
+            }
+
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                     parent?.requestDisallowInterceptTouchEvent(true)
@@ -1466,8 +1473,8 @@ class SketchCanvasView @JvmOverloads constructor(
         val isInk = if (isHighlighter) false else (activeTool == ActiveTool.FOUNTAIN_PEN || renderer.currentTone.isInk)
         renderer.isCurrentInk = isInk
         renderer.isCurrentHighlighter = isHighlighter
+        val stepDist = StrokeTessellator.getStepDistance(renderer.currentBaseWidth, isInk = isInk, isHighlighter = isHighlighter)
         val gen = liveDabGenerator ?: run {
-                val stepDist = StrokeTessellator.getStepDistance(renderer.currentBaseWidth, isInk = isInk, isHighlighter = isHighlighter)
                 val g = DabGenerator(stepDist)
                 liveDabGenerator = g
                 val first = activeStrokePoints.first()
@@ -1556,6 +1563,12 @@ class SketchCanvasView @JvmOverloads constructor(
             }
             activeStrokePoints.add(StrokePoint(curFx, curFy, finalEffPressure, event.eventTime))
             newDabs.addAll(gen.addPoint(curFx, curFy, finalEffPressure))
+
+            if (penPredictionEnabled) {
+                try {
+                    motionPredictor?.record(event)
+                } catch (e: Exception) {}
+            }
 
             if (newDabs.isNotEmpty()) {
                 frontBufferedRenderer?.renderFrontBufferedLayer(
@@ -1813,6 +1826,31 @@ class SketchCanvasView @JvmOverloads constructor(
         onSelectionChanged?.invoke(selectedStrokes.toList(), selectionBounds)
 
         StrokeClipboard.onPasted()
+
+        requestRedraw()
+        onStrokesChanged?.invoke(renderer.getCommittedStrokes())
+    }
+
+    /**
+     * Programmatically inserts new strokes (e.g. math solver output), records undo action,
+     * updates spatial indexing, and triggers redraw.
+     */
+    fun insertStrokes(strokes: List<Stroke>, selectAfterAdd: Boolean = false) {
+        if (strokes.isEmpty()) return
+        renderer.addCommittedStrokes(strokes)
+        for (s in strokes) spatialIndex.insert(s)
+        undoRedoManager.pushAction(CanvasAction.InsertStrokes(strokes))
+        onCanvasMutation?.invoke(CanvasMutation.Inserted(strokes))
+
+        if (selectAfterAdd) {
+            activeTool = ActiveTool.LASSO
+            onToolChanged?.invoke(ActiveTool.LASSO)
+            selectedStrokes.clear()
+            selectedStrokes.addAll(strokes)
+            selectionBounds = computeBounds(strokes)
+            renderer.setSelectedStrokes(strokes)
+            onSelectionChanged?.invoke(selectedStrokes.toList(), selectionBounds)
+        }
 
         requestRedraw()
         onStrokesChanged?.invoke(renderer.getCommittedStrokes())
@@ -2170,6 +2208,7 @@ class SketchCanvasView @JvmOverloads constructor(
         }
         velocityTracker?.recycle()
         velocityTracker = null
+        motionPredictor = null
         frontBufferedRenderer?.release(true)
         renderer.cleanup()
     }

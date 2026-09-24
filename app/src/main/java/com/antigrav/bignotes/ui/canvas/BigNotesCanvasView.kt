@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.*
+import com.antigrav.bignotes.core.math.model.MathOverlayState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +63,7 @@ fun BigNotesCanvasView(
     velocityThinning: Float = 0.60f,
     pageFormat: PageFormat = PageFormat.A4,
     showPageSeparators: Boolean = true,
+    penPredictionEnabled: Boolean = true,
     inkBleedConfig: com.antigrav.bignotes.core.model.InkBleedConfig = com.antigrav.bignotes.core.model.InkBleedConfig.DEFAULT,
     isCanvasEnabled: Boolean = true,
     hasFolders: Boolean = true,
@@ -77,6 +80,11 @@ fun BigNotesCanvasView(
     activeSearchHit: com.antigrav.bignotes.core.search.model.SearchHit? = null,
     onDismissSearchHit: (() -> Unit)? = null,
     onCopySelectedStrokesAsText: ((List<Stroke>) -> Unit)? = null,
+    onSolveMathSelectedStrokes: ((List<Stroke>) -> Unit)? = null,
+    mathOverlayState: MathOverlayState? = null,
+    onInsertMathAnswer: (() -> Unit)? = null,
+    onCopyMathAnswer: (() -> Unit)? = null,
+    onDismissMathOverlay: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var reticle by remember { mutableStateOf(ReticleState()) }
@@ -122,6 +130,7 @@ fun BigNotesCanvasView(
                     renderer.viewOffsetX = viewOffsetX
                     renderer.viewOffsetY = viewOffsetY
                     this.showPageSeparators = showPageSeparators
+                    this.penPredictionEnabled = penPredictionEnabled
                     this.inkBleedConfig = inkBleedConfig
                     this.worldPageHeight = worldPageHeight
                     eraserRadius = (strokeSize * 4.5f).coerceIn(16f, 90f)
@@ -187,6 +196,9 @@ fun BigNotesCanvasView(
                 }
                 if (view.showPageSeparators != showPageSeparators) {
                     view.showPageSeparators = showPageSeparators
+                }
+                if (view.penPredictionEnabled != penPredictionEnabled) {
+                    view.penPredictionEnabled = penPredictionEnabled
                 }
                 if (view.inkBleedConfig != inkBleedConfig) {
                     view.inkBleedConfig = inkBleedConfig
@@ -364,6 +376,20 @@ fun BigNotesCanvasView(
                         )
                     }
 
+                    if (onSolveMathSelectedStrokes != null) {
+                        IconButton(
+                            onClick = { onSolveMathSelectedStrokes.invoke(selectedStrokes) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Calculate,
+                                contentDescription = "Solve Math",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
                     IconButton(
                         onClick = { view.duplicateSelection() },
                         modifier = Modifier.size(28.dp)
@@ -402,6 +428,16 @@ fun BigNotesCanvasView(
                 }
             }
         }
+
+        // 3.4. Math Result Overlay
+        MathResultOverlay(
+            overlayState = mathOverlayState,
+            canvasView = canvasViewRef,
+            viewportTick = viewportTick,
+            onInsertAnswer = { onInsertMathAnswer?.invoke() },
+            onCopyAnswer = { onCopyMathAnswer?.invoke() },
+            onDismiss = { onDismissMathOverlay?.invoke() }
+        )
 
         // 3.5. Image Manipulation and Cropping Overlay
         ImageManipulationOverlay(

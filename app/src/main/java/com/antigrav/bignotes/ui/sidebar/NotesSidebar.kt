@@ -12,11 +12,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
+import androidx.compose.material.icons.automirrored.filled.ViewSidebar
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOff
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,6 +52,10 @@ fun NotesSidebar(
     onNoteExportPdf: ((NoteItem) -> Unit)? = null,
     onAddNote: () -> Unit,
     canAddNote: Boolean = true,
+    isFoldersVisible: Boolean = true,
+    onToggleFoldersVisible: (() -> Unit)? = null,
+    onOpenSettings: (() -> Unit)? = null,
+    onOpenHelpAbout: (() -> Unit)? = null,
     searchHits: Map<String, List<SearchHit>> = emptyMap(),
     onSearchQueryChanged: ((String) -> Unit)? = null,
     onSearchHitSelected: ((SearchHit) -> Unit)? = null,
@@ -87,19 +95,37 @@ fun NotesSidebar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
-                .padding(horizontal = 10.dp),
+                .height(54.dp)
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = "Notes",
-                style = MaterialTheme.typography.titleSmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (onToggleFoldersVisible != null) {
+                    IconButton(
+                        onClick = onToggleFoldersVisible,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (!isFoldersVisible) Icons.Default.FolderOpen else Icons.AutoMirrored.Filled.ViewSidebar,
+                            contentDescription = if (!isFoldersVisible) "Show Folders" else "Collapse Folders",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = "Notes",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             val addNoteBgColor = if (canAddNote) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
             } else {
@@ -114,7 +140,7 @@ fun NotesSidebar(
                 shape = CircleShape,
                 color = addNoteBgColor,
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(32.dp)
                     .clip(CircleShape)
                     .then(if (canAddNote) Modifier.clickable(onClick = onAddNote) else Modifier)
             ) {
@@ -123,7 +149,7 @@ fun NotesSidebar(
                         imageVector = Icons.AutoMirrored.Filled.NoteAdd,
                         contentDescription = if (canAddNote) "New Note" else "Create a folder first",
                         tint = addNoteIconTint,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -141,7 +167,7 @@ fun NotesSidebar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 6.dp)
-                .height(34.dp)
+                .height(40.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -153,7 +179,7 @@ fun NotesSidebar(
                     imageVector = Icons.Default.Search,
                     contentDescription = "Search Notes",
                     tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 androidx.compose.foundation.text.BasicTextField(
@@ -165,7 +191,7 @@ fun NotesSidebar(
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodySmall.copy(
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 12.sp
+                        fontSize = 13.5.sp
                     ),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                     modifier = Modifier.weight(1f),
@@ -175,7 +201,7 @@ fun NotesSidebar(
                                 text = "Search notes & handwriting...",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                    fontSize = 11.5.sp
+                                    fontSize = 13.sp
                                 )
                             )
                         }
@@ -188,13 +214,13 @@ fun NotesSidebar(
                             searchQuery = ""
                             onSearchQueryChanged?.invoke("")
                         },
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Clear",
                             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -298,6 +324,66 @@ fun NotesSidebar(
                 }
             }
         }
+
+        // Bottom Dock when Folders are collapsed
+        if (!isFoldersVisible && (onOpenSettings != null || onOpenHelpAbout != null)) {
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+            )
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    if (onOpenSettings != null) {
+                        IconButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    if (onOpenSettings != null && onOpenHelpAbout != null) {
+                        Box(
+                            modifier = Modifier
+                                .height(18.dp)
+                                .width(1.dp)
+                                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        )
+                    }
+                    if (onOpenHelpAbout != null) {
+                        IconButton(
+                            onClick = onOpenHelpAbout,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
+                                contentDescription = "Help & About",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -352,7 +438,7 @@ private fun NoteRowItem(
             .then(highlightBorder)
             .background(backgroundColor)
             .then(clickModifier)
-            .padding(horizontal = 9.dp, vertical = if (isEditing) 5.dp else 7.dp)
+            .padding(horizontal = 10.dp, vertical = if (isEditing) 6.dp else 8.5.dp)
     ) {
         val pageCount = remember(note, pageFormat) {
             getPageCount?.invoke(note) ?: run {
@@ -368,7 +454,7 @@ private fun NoteRowItem(
         ) {
             Box(
                 modifier = Modifier
-                    .size(24.dp)
+                    .size(28.dp)
                     .clip(CircleShape)
                     .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent),
                 contentAlignment = Alignment.Center
@@ -377,10 +463,10 @@ private fun NoteRowItem(
                     imageVector = Icons.Default.Description,
                     contentDescription = null,
                     tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(7.dp))
 
             if (isEditing) {
                 InPlaceRenameField(
@@ -390,7 +476,7 @@ private fun NoteRowItem(
                     modifier = Modifier.weight(1f),
                     textStyle = MaterialTheme.typography.titleSmall.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                        fontSize = 14.5.sp
                     )
                 )
             } else {
@@ -398,7 +484,7 @@ private fun NoteRowItem(
                     text = note.title,
                     style = MaterialTheme.typography.titleSmall.copy(
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 13.sp
+                        fontSize = 14.5.sp
                     ),
                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -406,21 +492,21 @@ private fun NoteRowItem(
                     modifier = Modifier.weight(1f)
                 )
 
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(5.dp))
 
                 Surface(
-                    shape = RoundedCornerShape(5.dp),
+                    shape = RoundedCornerShape(6.dp),
                     color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                     border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
                 ) {
                     Text(
                         text = pageStr,
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 9.sp,
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.SemiBold
                         ),
                         color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         maxLines = 1,
                         softWrap = false
                     )
@@ -433,7 +519,7 @@ private fun NoteRowItem(
             val editedStr = remember(note.updatedAt) { formatRelativeTimeAgo(note.updatedAt) }
 
             if (createdStr.isNotBlank() || editedStr.isNotBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(5.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -442,7 +528,7 @@ private fun NoteRowItem(
                     if (createdStr.isNotBlank()) {
                         Text(
                             text = createdStr,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -458,13 +544,13 @@ private fun NoteRowItem(
                             Text(
                                 text = editedStr,
                                 style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 9.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = if (editedStr == "just now") FontWeight.Bold else FontWeight.Normal
                                 ),
                                 color = if (editedStr == "just now") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                                 maxLines = 1,
                                 softWrap = false,
-                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                             )
                         }
                     }
@@ -486,13 +572,13 @@ private fun NoteRowItem(
                         imageVector = Icons.Default.Edit,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(11.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = topHit.snippet,
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         ),
                         color = MaterialTheme.colorScheme.primary,

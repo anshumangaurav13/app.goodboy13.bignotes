@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import com.antigrav.bignotes.ui.components.InPlaceRenameField
 import com.antigrav.bignotes.ui.components.SwipeToRevealItem
@@ -39,22 +40,11 @@ fun FoldersSidebar(
     onAddFolder: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenHelpAbout: () -> Unit = {},
+    onToggleCollapse: (() -> Unit)? = null,
     statusBarHeight: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
     var editingFolderId by remember { mutableStateOf<String?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
-
-    val filteredFolders = remember(folders, searchQuery) {
-        if (searchQuery.isBlank()) folders
-        else {
-            val q = searchQuery.trim().lowercase()
-            folders.filter { folder ->
-                folder.name.lowercase().contains(q) ||
-                formatCreationDateTime(folder.createdAt).lowercase().contains(q)
-            }
-        }
-    }
 
     Column(
         modifier = modifier
@@ -72,24 +62,42 @@ fun FoldersSidebar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
-                .padding(horizontal = 10.dp),
+                .height(54.dp)
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = "Folders",
-                style = MaterialTheme.typography.titleSmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (onToggleCollapse != null) {
+                    IconButton(
+                        onClick = onToggleCollapse,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.MenuOpen,
+                            contentDescription = "Collapse Folders",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = "Folders",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             Surface(
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f),
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(32.dp)
                     .clip(CircleShape)
                     .clickable(onClick = onAddFolder)
             ) {
@@ -98,7 +106,7 @@ fun FoldersSidebar(
                         imageVector = Icons.Default.CreateNewFolder,
                         contentDescription = "New Folder",
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -109,69 +117,8 @@ fun FoldersSidebar(
             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
         )
 
-        // Compact Searchbar
-        Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 6.dp, vertical = 6.dp)
-                .height(34.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search Folders",
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                androidx.compose.foundation.text.BasicTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 11.5.sp
-                    ),
-                    cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.weight(1f),
-                    decorationBox = { innerTextField ->
-                        if (searchQuery.isEmpty()) {
-                            Text(
-                                text = "Search...",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                    fontSize = 11.sp
-                                )
-                            )
-                        }
-                        innerTextField()
-                    }
-                )
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(
-                        onClick = { searchQuery = "" },
-                        modifier = Modifier.size(20.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Clear",
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-                }
-            }
-        }
-
         // Folders List with iOS-style Swipe-to-Reveal Delete
-        if (filteredFolders.isEmpty()) {
+        if (folders.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -180,7 +127,7 @@ fun FoldersSidebar(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (searchQuery.isNotEmpty()) "No matches" else "No folders",
+                    text = "No folders",
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
@@ -195,7 +142,7 @@ fun FoldersSidebar(
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                items(filteredFolders, key = { it.id }) { folder ->
+                items(folders, key = { it.id }) { folder ->
                     val isSelected = folder.id == selectedFolderId
                     val isEditing = folder.id == editingFolderId
                     SwipeToRevealItem(
@@ -222,7 +169,7 @@ fun FoldersSidebar(
 
         // Bottom Footer with Sleek Rounded Pill Dock
         Surface(
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(14.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
             modifier = Modifier
@@ -232,37 +179,37 @@ fun FoldersSidebar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(40.dp)
+                    .height(46.dp)
                     .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 IconButton(
                     onClick = onOpenSettings,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = "Settings",
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
                 Box(
                     modifier = Modifier
-                        .height(16.dp)
+                        .height(18.dp)
                         .width(1.dp)
                         .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                 )
                 IconButton(
                     onClick = onOpenHelpAbout,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
                         contentDescription = "Help & About",
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -323,12 +270,12 @@ private fun FolderRowItem(
             .then(highlightBorder)
             .background(backgroundColor)
             .then(clickModifier)
-            .padding(horizontal = 8.dp, vertical = if (isEditing) 4.dp else 7.dp),
+            .padding(horizontal = 9.dp, vertical = if (isEditing) 5.dp else 8.5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(24.dp)
+                .size(28.dp)
                 .clip(CircleShape)
                 .background(folderColor.copy(alpha = if (isSelected) 0.25f else 0.14f)),
             contentAlignment = Alignment.Center
@@ -337,11 +284,11 @@ private fun FolderRowItem(
                 imageVector = if (isSelected) Icons.Default.FolderOpen else Icons.Default.Folder,
                 contentDescription = null,
                 tint = folderColor,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
 
-        Spacer(modifier = Modifier.width(6.dp))
+        Spacer(modifier = Modifier.width(7.dp))
 
         if (isEditing) {
             InPlaceRenameField(
@@ -349,17 +296,17 @@ private fun FolderRowItem(
                 onCommit = onCommitRename,
                 onCancel = onCancelRename,
                 modifier = Modifier.weight(1f),
-                textStyle = MaterialTheme.typography.bodySmall.copy(
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp
+                    fontSize = 14.sp
                 )
             )
         } else {
             Text(
                 text = folder.name,
-                style = MaterialTheme.typography.bodySmall.copy(
+                style = MaterialTheme.typography.bodyMedium.copy(
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    fontSize = 12.5.sp
+                    fontSize = 14.sp
                 ),
                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -375,11 +322,11 @@ private fun FolderRowItem(
                     Text(
                         text = "${folder.noteCount}",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 9.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         ),
                         color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                     )
                 }
             }
