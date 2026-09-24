@@ -22,6 +22,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import com.antigrav.bignotes.ui.components.InPlaceRenameField
@@ -38,6 +45,8 @@ fun FoldersSidebar(
     onFolderRename: ((folderId: String, newName: String) -> Unit)? = null,
     onAddFolder: () -> Unit,
     onOpenSettings: () -> Unit,
+    isDarkMode: Boolean = false,
+    onToggleDarkMode: () -> Unit = {},
     onToggleCollapse: (() -> Unit)? = null,
     statusBarHeight: Dp = 0.dp,
     modifier: Modifier = Modifier
@@ -165,7 +174,7 @@ fun FoldersSidebar(
             }
         }
 
-        // Bottom Footer with Sleek Rounded Pill Dock (Settings)
+        // Bottom Footer with Sleek Rounded Pill Dock (Theme Toggle & Settings)
         Surface(
             shape = RoundedCornerShape(14.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
@@ -174,12 +183,34 @@ fun FoldersSidebar(
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 8.dp)
         ) {
-            Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(46.dp),
-                contentAlignment = Alignment.Center
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(
+                    onClick = onToggleDarkMode,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    AnimatedContent(
+                        targetState = isDarkMode,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.8f))
+                                .togetherWith(fadeOut(animationSpec = tween(180)) + scaleOut(targetScale = 0.8f))
+                        },
+                        label = "FoldersThemeToggleAnimation"
+                    ) { dark ->
+                        Icon(
+                            imageVector = if (dark) Icons.Default.DarkMode else Icons.Default.LightMode,
+                            contentDescription = if (dark) "Switch to Light Mode" else "Switch to Dark Mode",
+                            tint = if (dark) Color(0xFFFFD54F) else Color(0xFFF57C00),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
                 IconButton(
                     onClick = onOpenSettings,
                     modifier = Modifier.size(36.dp)

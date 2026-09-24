@@ -57,17 +57,17 @@ enum class SettingsCategory(
     val icon: ImageVector,
     val iconBg: Color
 ) {
-    CANVAS_STYLUS(
-        "Canvas & Stylus",
-        "Grid background, strict stylus, pen prediction",
-        Icons.Default.Gesture,
-        Color(0xFF0284C7)
-    ),
-    PEN_FEEL(
-        "Pen Feel & Curves",
-        "Pressure curve and velocity thinning",
+    PEN_STYLUS(
+        "Pen & Stylus",
+        "Palm rejection, prediction, curves & snapping",
         Icons.Default.Edit,
         Color(0xFF6366F1)
+    ),
+    CANVAS_GRID(
+        "Canvas & Grid",
+        "Grid background, spacing & page separators",
+        Icons.Default.GridOn,
+        Color(0xFF0284C7)
     ),
     GESTURES(
         "Gestures",
@@ -75,17 +75,17 @@ enum class SettingsCategory(
         Icons.Default.TouchApp,
         Color(0xFFF59E0B)
     ),
-    BACKUP(
-        "Backup & Storage",
-        "Auto-snapshot, backup folder, timeline",
-        Icons.Default.Folder,
-        Color(0xFF10B981)
-    ),
     HANDWRITING(
         "Handwriting & Search",
         "Offline recognition model, search index",
         Icons.Default.Search,
         Color(0xFF8B5CF6)
+    ),
+    BACKUP(
+        "Backup & Storage",
+        "Auto-snapshot, backup folder, timeline",
+        Icons.Default.Folder,
+        Color(0xFF10B981)
     ),
     HELP(
         "Help & Guide",
@@ -97,8 +97,6 @@ enum class SettingsCategory(
 
 @Composable
 fun SettingsDialog(
-    themeConfig: ThemeConfig,
-    onThemeConfigChange: (ThemeConfig) -> Unit,
     pressureBezier: BezierControlPoints,
     onPressureBezierChange: (BezierControlPoints) -> Unit,
     velocityBezier: BezierControlPoints,
@@ -236,71 +234,6 @@ fun SettingsDialog(
                         ) {
                             Spacer(modifier = Modifier.height(2.dp))
 
-                            // Color Mode Switch (Elevated directly to root settings menu)
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            onThemeConfigChange(themeConfig.copy(isDark = !themeConfig.isDark))
-                                        }
-                                        .padding(horizontal = 14.dp, vertical = 11.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(Color(0xFFEC4899)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = if (themeConfig.isDark) Icons.Default.DarkMode else Icons.Default.LightMode,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.width(12.dp))
-
-                                        Column {
-                                            Text(
-                                                text = if (themeConfig.isDark) "Dark Mode" else "Light Mode",
-                                                style = MaterialTheme.typography.bodyMedium.copy(
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    fontSize = 14.sp
-                                                ),
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                text = if (themeConfig.isDark) "Dark paper canvas" else "Natural light paper canvas",
-                                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                            )
-                                        }
-                                    }
-
-                                    Switch(
-                                        checked = themeConfig.isDark,
-                                        onCheckedChange = { onThemeConfigChange(themeConfig.copy(isDark = it)) },
-                                        modifier = Modifier.scale(0.8f)
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
@@ -390,9 +323,7 @@ fun SettingsDialog(
                                 .verticalScroll(rememberScrollState())
                         ) {
                             when (targetCat) {
-                                SettingsCategory.CANVAS_STYLUS -> CanvasStylusDetail(
-                                    gridConfig = gridConfig,
-                                    onGridConfigChange = onGridConfigChange,
+                                SettingsCategory.PEN_STYLUS -> PenStylusDetail(
                                     strictStylusMode = strictStylusMode,
                                     onStrictStylusModeChange = onStrictStylusModeChange,
                                     penPredictionEnabled = penPredictionEnabled,
@@ -401,15 +332,17 @@ fun SettingsDialog(
                                     onShapeSnappingEnabledChange = onShapeSnappingEnabledChange,
                                     shapeSnapDelayMs = shapeSnapDelayMs,
                                     onShapeSnapDelayMsChange = onShapeSnapDelayMsChange,
-                                    showPageSeparators = showPageSeparators,
-                                    onShowPageSeparatorsChange = onShowPageSeparatorsChange
-                                )
-
-                                SettingsCategory.PEN_FEEL -> PenFeelDetail(
                                     pressureBezier = pressureBezier,
                                     onPressureBezierChange = onPressureBezierChange,
                                     velocityBezier = velocityBezier,
                                     onVelocityBezierChange = onVelocityBezierChange
+                                )
+
+                                SettingsCategory.CANVAS_GRID -> CanvasGridDetail(
+                                    gridConfig = gridConfig,
+                                    onGridConfigChange = onGridConfigChange,
+                                    showPageSeparators = showPageSeparators,
+                                    onShowPageSeparatorsChange = onShowPageSeparatorsChange
                                 )
                                 SettingsCategory.GESTURES -> GesturesDetail(
                                     multiFingerGesturesEnabled = multiFingerGesturesEnabled,
@@ -486,99 +419,28 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun CanvasStylusDetail(
-    gridConfig: GridConfig,
-    onGridConfigChange: (GridConfig) -> Unit,
+private fun PenStylusDetail(
     strictStylusMode: Boolean,
     onStrictStylusModeChange: (Boolean) -> Unit,
-    penPredictionEnabled: Boolean = true,
-    onPenPredictionEnabledChange: (Boolean) -> Unit = {},
+    penPredictionEnabled: Boolean,
+    onPenPredictionEnabledChange: (Boolean) -> Unit,
     shapeSnappingEnabled: Boolean,
     onShapeSnappingEnabledChange: (Boolean) -> Unit,
     shapeSnapDelayMs: Long,
     onShapeSnapDelayMsChange: (Long) -> Unit,
-    showPageSeparators: Boolean,
-    onShowPageSeparatorsChange: (Boolean) -> Unit
+    pressureBezier: BezierControlPoints,
+    onPressureBezierChange: (BezierControlPoints) -> Unit,
+    velocityBezier: BezierControlPoints,
+    onVelocityBezierChange: (BezierControlPoints) -> Unit
 ) {
+    var testStrokes by remember { mutableStateOf(listOf<List<TestStrokePoint>>()) }
+    var currentTestStroke by remember { mutableStateOf<List<TestStrokePoint>>(emptyList()) }
+    var testLastX by remember { mutableFloatStateOf(0f) }
+    var testLastY by remember { mutableFloatStateOf(0f) }
+    var testLastTime by remember { mutableLongStateOf(0L) }
+    var testSpeed by remember { mutableFloatStateOf(0f) }
 
-    SectionHeader("GRID BACKGROUND")
-    SettingsCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Background Grid",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "High-performance procedural grid",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-            }
-            Switch(
-                checked = gridConfig.enabled,
-                onCheckedChange = { onGridConfigChange(gridConfig.copy(enabled = it)) },
-                modifier = Modifier.scale(0.8f)
-            )
-        }
-
-        if (gridConfig.enabled) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                GridStyle.entries.forEach { style ->
-                    val isSelected = gridConfig.style == style
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { onGridConfigChange(gridConfig.copy(style = style)) },
-                        label = { Text(style.displayName, fontSize = 12.sp) },
-                        modifier = Modifier.weight(1f).height(32.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("Spacing", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-                Text("${gridConfig.spacingPx.roundToInt()}px", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
-            }
-            Slider(
-                value = gridConfig.spacingPx,
-                onValueChange = { onGridConfigChange(gridConfig.copy(spacingPx = it)) },
-                valueRange = 24f..96f,
-                modifier = Modifier.fillMaxWidth().height(24.dp)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("Opacity", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-                Text("${(gridConfig.opacity * 100f).roundToInt()}%", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
-            }
-            Slider(
-                value = gridConfig.opacity,
-                onValueChange = { onGridConfigChange(gridConfig.copy(opacity = it)) },
-                valueRange = 0.05f..0.60f,
-                modifier = Modifier.fillMaxWidth().height(24.dp)
-            )
-        }
-    }
-
-    Spacer(modifier = Modifier.height(10.dp))
-
-    SectionHeader("PALM REJECTION & INPUT")
+    SectionHeader("PALM REJECTION & MOTION PREDICTION")
     SettingsCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -683,49 +545,6 @@ private fun CanvasStylusDetail(
     }
 
     Spacer(modifier = Modifier.height(10.dp))
-
-    SectionHeader("PAGE LAYOUT")
-
-    SettingsCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                Text(
-                    text = "Page Separators",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Show horizontal dotted page boundaries for PDF export layout",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-            }
-            Switch(
-                checked = showPageSeparators,
-                onShowPageSeparatorsChange,
-                modifier = Modifier.scale(0.8f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun PenFeelDetail(
-    pressureBezier: BezierControlPoints,
-    onPressureBezierChange: (BezierControlPoints) -> Unit,
-    velocityBezier: BezierControlPoints,
-    onVelocityBezierChange: (BezierControlPoints) -> Unit
-) {
-    var testStrokes by remember { mutableStateOf(listOf<List<TestStrokePoint>>()) }
-    var currentTestStroke by remember { mutableStateOf<List<TestStrokePoint>>(emptyList()) }
-    var testLastX by remember { mutableFloatStateOf(0f) }
-    var testLastY by remember { mutableFloatStateOf(0f) }
-    var testLastTime by remember { mutableLongStateOf(0L) }
-    var testSpeed by remember { mutableFloatStateOf(0f) }
 
     SectionHeader("PRESSURE & VELOCITY RESPONSE")
     Row(
@@ -872,6 +691,119 @@ private fun PenFeelDetail(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CanvasGridDetail(
+    gridConfig: GridConfig,
+    onGridConfigChange: (GridConfig) -> Unit,
+    showPageSeparators: Boolean,
+    onShowPageSeparatorsChange: (Boolean) -> Unit
+) {
+    SectionHeader("GRID BACKGROUND")
+    SettingsCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Background Grid",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "High-performance procedural grid",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+            Switch(
+                checked = gridConfig.enabled,
+                onCheckedChange = { onGridConfigChange(gridConfig.copy(enabled = it)) },
+                modifier = Modifier.scale(0.8f)
+            )
+        }
+
+        if (gridConfig.enabled) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                GridStyle.entries.forEach { style ->
+                    val isSelected = gridConfig.style == style
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onGridConfigChange(gridConfig.copy(style = style)) },
+                        label = { Text(style.displayName, fontSize = 12.sp) },
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Spacing", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Text("${gridConfig.spacingPx.roundToInt()}px", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+            }
+            Slider(
+                value = gridConfig.spacingPx,
+                onValueChange = { onGridConfigChange(gridConfig.copy(spacingPx = it)) },
+                valueRange = 24f..96f,
+                modifier = Modifier.fillMaxWidth().height(24.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Opacity", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Text("${(gridConfig.opacity * 100f).roundToInt()}%", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+            }
+            Slider(
+                value = gridConfig.opacity,
+                onValueChange = { onGridConfigChange(gridConfig.copy(opacity = it)) },
+                valueRange = 0.05f..0.60f,
+                modifier = Modifier.fillMaxWidth().height(24.dp)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    SectionHeader("PAGE LAYOUT")
+
+    SettingsCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                Text(
+                    text = "Page Separators",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Show horizontal dotted page boundaries for PDF export layout",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+            Switch(
+                checked = showPageSeparators,
+                onCheckedChange = onShowPageSeparatorsChange,
+                modifier = Modifier.scale(0.8f)
+            )
         }
     }
 }

@@ -52,6 +52,8 @@ fun DualSidebarContainer(
     isFoldersVisible: Boolean = true,
     onToggleFoldersVisible: () -> Unit = {},
     onOpenSettings: () -> Unit,
+    isDarkMode: Boolean = false,
+    onToggleDarkMode: () -> Unit = {},
     searchHits: Map<String, List<com.antigrav.bignotes.core.search.model.SearchHit>> = emptyMap(),
     onSearchQueryChanged: ((String) -> Unit)? = null,
     onSearchHitSelected: ((com.antigrav.bignotes.core.search.model.SearchHit) -> Unit)? = null,
@@ -93,6 +95,8 @@ fun DualSidebarContainer(
                     onAddFolder = onAddFolder,
                     onToggleCollapse = onToggleFoldersVisible,
                     onOpenSettings = onOpenSettings,
+                    isDarkMode = isDarkMode,
+                    onToggleDarkMode = onToggleDarkMode,
                     statusBarHeight = statusBarHeight,
                     modifier = Modifier
                         .width(folderWidth)
@@ -119,6 +123,8 @@ fun DualSidebarContainer(
                 isFoldersVisible = isFoldersVisible,
                 onToggleFoldersVisible = onToggleFoldersVisible,
                 onOpenSettings = onOpenSettings,
+                isDarkMode = isDarkMode,
+                onToggleDarkMode = onToggleDarkMode,
                 searchHits = searchHits,
                 onSearchQueryChanged = onSearchQueryChanged,
                 onSearchHitSelected = onSearchHitSelected,

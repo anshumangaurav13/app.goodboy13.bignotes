@@ -75,7 +75,7 @@ class PageSeparatorRenderer {
 
         val dashLen = 14f
         val gapLen = 10f
-        val halfThickness = 1.6f // 3.2 world units thick line for prominent, crisp visibility
+        val halfThickness = 1.0f // 2.0 world units thick line for refined, crisp visibility
         val pitch = dashLen + gapLen
 
         val numDashes = (width / pitch).toInt() + 1

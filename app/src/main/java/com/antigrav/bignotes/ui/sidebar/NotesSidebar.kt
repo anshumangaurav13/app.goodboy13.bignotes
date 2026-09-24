@@ -17,6 +17,15 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Settings
@@ -54,6 +63,8 @@ fun NotesSidebar(
     isFoldersVisible: Boolean = true,
     onToggleFoldersVisible: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
+    isDarkMode: Boolean = false,
+    onToggleDarkMode: () -> Unit = {},
     searchHits: Map<String, List<SearchHit>> = emptyMap(),
     onSearchQueryChanged: ((String) -> Unit)? = null,
     onSearchHitSelected: ((SearchHit) -> Unit)? = null,
@@ -323,7 +334,7 @@ fun NotesSidebar(
             }
         }
 
-        // Bottom Dock when Folders are collapsed (Settings)
+        // Bottom Dock when Folders are collapsed (Theme Toggle & Settings)
         if (!isFoldersVisible && onOpenSettings != null) {
             HorizontalDivider(
                 thickness = 0.5.dp,
@@ -337,12 +348,34 @@ fun NotesSidebar(
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 8.dp)
             ) {
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(46.dp),
-                    contentAlignment = Alignment.Center
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    IconButton(
+                        onClick = onToggleDarkMode,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        AnimatedContent(
+                            targetState = isDarkMode,
+                            transitionSpec = {
+                                (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.8f))
+                                    .togetherWith(fadeOut(animationSpec = tween(180)) + scaleOut(targetScale = 0.8f))
+                            },
+                            label = "NotesThemeToggleAnimation"
+                        ) { dark ->
+                            Icon(
+                                imageVector = if (dark) Icons.Default.DarkMode else Icons.Default.LightMode,
+                                contentDescription = if (dark) "Switch to Light Mode" else "Switch to Dark Mode",
+                                tint = if (dark) Color(0xFFFFD54F) else Color(0xFFF57C00),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
                     IconButton(
                         onClick = onOpenSettings,
                         modifier = Modifier.size(36.dp)

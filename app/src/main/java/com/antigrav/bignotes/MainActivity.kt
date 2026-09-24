@@ -198,7 +198,13 @@ fun BigNotesMainScreen(
     }
     val initialSettingsCategory = remember(initialSettingsCategoryName) {
         initialSettingsCategoryName?.let { name ->
-            try { SettingsCategory.valueOf(name.uppercase()) } catch (e: Exception) { null }
+            try {
+                when (name.uppercase()) {
+                    "CANVAS_STYLUS", "PEN_FEEL" -> SettingsCategory.PEN_STYLUS
+                    "CANVAS_GRID" -> SettingsCategory.CANVAS_GRID
+                    else -> SettingsCategory.valueOf(name.uppercase())
+                }
+            } catch (e: Exception) { null }
         }
     }
     var activeSettingsCategory by remember { mutableStateOf<SettingsCategory?>(initialSettingsCategory) }
@@ -1298,6 +1304,10 @@ fun BigNotesMainScreen(
                     activeSettingsCategory = null
                     showSettingsDialog = true
                 },
+                isDarkMode = themeConfig.isDark,
+                onToggleDarkMode = {
+                    onThemeConfigChange(themeConfig.copy(isDark = !themeConfig.isDark))
+                },
                 searchHits = searchHits,
                 onSearchQueryChanged = onSearchQueryChanged,
                 onSearchHitSelected = { hit ->
@@ -1325,8 +1335,6 @@ fun BigNotesMainScreen(
     // Settings & Appearance Dialog
     if (showSettingsDialog) {
         SettingsDialog(
-            themeConfig = themeConfig,
-            onThemeConfigChange = onThemeConfigChange,
             pressureBezier = pressureBezierConfig,
             onPressureBezierChange = { newCurve ->
                 pressureBezierConfig = newCurve
