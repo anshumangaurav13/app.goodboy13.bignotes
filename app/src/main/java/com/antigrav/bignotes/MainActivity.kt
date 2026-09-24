@@ -236,9 +236,6 @@ fun BigNotesMainScreen(
     var strictStylusMode by remember {
         mutableStateOf(prefs.getBoolean("strict_stylus_mode", true))
     }
-    var penPredictionEnabled by remember {
-        mutableStateOf(prefs.getBoolean("pen_prediction_enabled", true))
-    }
     var isFoldersVisible by remember {
         mutableStateOf(prefs.getBoolean("is_folders_visible", true))
     }
@@ -888,7 +885,6 @@ fun BigNotesMainScreen(
             velocityBezierConfig = velocityBezierConfig,
             pageFormat = selectedPdfPageFormat,
             showPageSeparators = showPageSeparators,
-            penPredictionEnabled = penPredictionEnabled,
             inkBleedConfig = inkBleedConfig,
             isCanvasEnabled = selectedNoteId != null,
             hasFolders = folders.isNotEmpty(),
@@ -926,7 +922,6 @@ fun BigNotesMainScreen(
                 boundView.renderer.showPageSeparators = showPageSeparators
                 boundView.gridConfig = gridConfig
                 boundView.strictStylusMode = strictStylusMode
-                boundView.penPredictionEnabled = penPredictionEnabled
                 boundView.multiFingerGesturesEnabled = multiFingerGesturesEnabled
                 boundView.shapeSnappingEnabled = shapeSnappingEnabled
                 boundView.shapeSnapDelayMs = shapeSnapDelayMs
@@ -1404,12 +1399,6 @@ fun BigNotesMainScreen(
                 strictStylusMode = mode
                 canvasView?.strictStylusMode = mode
                 prefs.edit().putBoolean("strict_stylus_mode", mode).apply()
-            },
-            penPredictionEnabled = penPredictionEnabled,
-            onPenPredictionEnabledChange = { enabled ->
-                penPredictionEnabled = enabled
-                canvasView?.penPredictionEnabled = enabled
-                prefs.edit().putBoolean("pen_prediction_enabled", enabled).apply()
             },
             multiFingerGesturesEnabled = multiFingerGesturesEnabled,
             onMultiFingerGesturesEnabledChange = { enabled ->

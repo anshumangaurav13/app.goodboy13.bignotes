@@ -107,7 +107,6 @@ class SketchCanvasView @JvmOverloads constructor(
     }
 
     private var frontBufferedRenderer: GLFrontBufferedRenderer<FrontBufferPacket>? = null
-    var penPredictionEnabled: Boolean = true
 
     // Active tool and eraser state
     var activeTool: ActiveTool = ActiveTool.PENCIL
@@ -963,11 +962,10 @@ class SketchCanvasView @JvmOverloads constructor(
                 return true
             }
 
-            if (penPredictionEnabled) {
-                try {
-                    requestUnbufferedDispatch(event)
-                } catch (e: Exception) {}
-            }
+            // Request immediate unbuffered hardware dispatch for zero-latency raw digitizer input
+            try {
+                requestUnbufferedDispatch(event)
+            } catch (e: Exception) {}
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {

@@ -107,8 +107,6 @@ fun SettingsDialog(
     onGridConfigChange: (GridConfig) -> Unit = {},
     strictStylusMode: Boolean = true,
     onStrictStylusModeChange: (Boolean) -> Unit = {},
-    penPredictionEnabled: Boolean = true,
-    onPenPredictionEnabledChange: (Boolean) -> Unit = {},
     multiFingerGesturesEnabled: Boolean = true,
     onMultiFingerGesturesEnabledChange: (Boolean) -> Unit = {},
     shapeSnappingEnabled: Boolean = true,
@@ -326,8 +324,6 @@ fun SettingsDialog(
                                 SettingsCategory.PEN_STYLUS -> PenStylusDetail(
                                     strictStylusMode = strictStylusMode,
                                     onStrictStylusModeChange = onStrictStylusModeChange,
-                                    penPredictionEnabled = penPredictionEnabled,
-                                    onPenPredictionEnabledChange = onPenPredictionEnabledChange,
                                     shapeSnappingEnabled = shapeSnappingEnabled,
                                     onShapeSnappingEnabledChange = onShapeSnappingEnabledChange,
                                     shapeSnapDelayMs = shapeSnapDelayMs,
@@ -422,8 +418,6 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 private fun PenStylusDetail(
     strictStylusMode: Boolean,
     onStrictStylusModeChange: (Boolean) -> Unit,
-    penPredictionEnabled: Boolean,
-    onPenPredictionEnabledChange: (Boolean) -> Unit,
     shapeSnappingEnabled: Boolean,
     onShapeSnappingEnabledChange: (Boolean) -> Unit,
     shapeSnapDelayMs: Long,
@@ -440,7 +434,7 @@ private fun PenStylusDetail(
     var testLastTime by remember { mutableLongStateOf(0L) }
     var testSpeed by remember { mutableFloatStateOf(0f) }
 
-    SectionHeader("PALM REJECTION & MOTION PREDICTION")
+    SectionHeader("PALM REJECTION")
     SettingsCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -462,36 +456,6 @@ private fun PenStylusDetail(
             Switch(
                 checked = strictStylusMode,
                 onCheckedChange = onStrictStylusModeChange,
-                modifier = Modifier.scale(0.8f)
-            )
-        }
-
-        HorizontalDivider(
-            thickness = 0.5.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                Text(
-                    text = "Pen Motion Prediction",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Low-latency motion prediction: projects stroke trajectory ahead to minimize pen lag",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-            }
-            Switch(
-                checked = penPredictionEnabled,
-                onCheckedChange = onPenPredictionEnabledChange,
                 modifier = Modifier.scale(0.8f)
             )
         }

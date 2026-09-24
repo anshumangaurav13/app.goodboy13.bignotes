@@ -62,7 +62,6 @@ fun BigNotesCanvasView(
     velocityThinning: Float = 0.60f,
     pageFormat: PageFormat = PageFormat.A4,
     showPageSeparators: Boolean = true,
-    penPredictionEnabled: Boolean = true,
     inkBleedConfig: com.antigrav.bignotes.core.model.InkBleedConfig = com.antigrav.bignotes.core.model.InkBleedConfig.DEFAULT,
     isCanvasEnabled: Boolean = true,
     hasFolders: Boolean = true,
@@ -128,7 +127,6 @@ fun BigNotesCanvasView(
                     renderer.viewOffsetX = viewOffsetX
                     renderer.viewOffsetY = viewOffsetY
                     this.showPageSeparators = showPageSeparators
-                    this.penPredictionEnabled = penPredictionEnabled
                     this.inkBleedConfig = inkBleedConfig
                     this.worldPageHeight = worldPageHeight
                     eraserRadius = (strokeSize * 4.5f).coerceIn(16f, 90f)
@@ -193,9 +191,6 @@ fun BigNotesCanvasView(
                 }
                 if (view.showPageSeparators != showPageSeparators) {
                     view.showPageSeparators = showPageSeparators
-                }
-                if (view.penPredictionEnabled != penPredictionEnabled) {
-                    view.penPredictionEnabled = penPredictionEnabled
                 }
                 if (view.inkBleedConfig != inkBleedConfig) {
                     view.inkBleedConfig = inkBleedConfig
