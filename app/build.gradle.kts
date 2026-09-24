@@ -69,7 +69,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     implementation("androidx.graphics:graphics-core:1.0.2")
-    implementation("androidx.input:input-motionprediction:1.0.0-beta03")
     implementation("androidx.documentfile:documentfile:1.0.1")
 
     val roomVersion = "2.6.1"

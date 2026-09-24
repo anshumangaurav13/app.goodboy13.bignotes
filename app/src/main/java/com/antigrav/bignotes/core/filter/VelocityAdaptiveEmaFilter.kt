@@ -1,4 +1,4 @@
-﻿package com.antigrav.bignotes.core.filter
+package com.antigrav.bignotes.core.filter
 
 import kotlin.math.hypot
 import kotlin.math.pow
@@ -33,7 +33,7 @@ class VelocityAdaptiveEmaFilter(
     var filteredY: Float = 0f
         private set
 
-    private var lastTimestampMs: Long = -1L
+    private var lastTimestampNanos: Long = -1L
     private var isInitialized: Boolean = false
 
     /**
@@ -41,7 +41,7 @@ class VelocityAdaptiveEmaFilter(
      */
     fun reset() {
         isInitialized = false
-        lastTimestampMs = -1L
+        lastTimestampNanos = -1L
         filteredX = 0f
         filteredY = 0f
     }
@@ -69,39 +69,41 @@ class VelocityAdaptiveEmaFilter(
     }
 
     /**
-     * Filters incoming stylus position (x, y) at timestampMs.
+     * Filters incoming stylus position (x, y) at timestampNanos.
      * Results stored in [filteredX] and [filteredY].
      */
-    fun filter(x: Float, y: Float, timestampMs: Long) {
+    fun filter(x: Float, y: Float, timestampNanos: Long) {
         if (!isInitialized) {
             isInitialized = true
-            lastTimestampMs = timestampMs
+            lastTimestampNanos = timestampNanos
             filteredX = x
             filteredY = y
             return
         }
 
         if (smoothingLevel <= 0.01f) {
-            lastTimestampMs = timestampMs
+            lastTimestampNanos = timestampNanos
             filteredX = x
             filteredY = y
             return
         }
 
-        // Time step in seconds. If sub-events share a millisecond, assume 4ms inter-sample interval.
-        val dt = if (lastTimestampMs > 0 && timestampMs > lastTimestampMs) {
-            ((timestampMs - lastTimestampMs).toFloat() / 1000f).coerceIn(0.001f, 0.050f)
+        // Time step in seconds. Nanosecond precision avoids millisecond discretization collapse at 120Hz-480Hz unbuffered rates.
+        val dtNanos = if (lastTimestampNanos > 0L && timestampNanos > lastTimestampNanos) {
+            timestampNanos - lastTimestampNanos
         } else {
-            0.004f
+            2_777_778L // default fallback ~360Hz (2.77ms)
         }
-        lastTimestampMs = timestampMs
+        lastTimestampNanos = timestampNanos
+
+        val dt = (dtNanos.toDouble() / 1_000_000_000.0).toFloat().coerceIn(0.0002f, 0.050f)
 
         // Displacement from previous smoothed position
         val dx = x - filteredX
         val dy = y - filteredY
         val dist = hypot(dx.toDouble(), dy.toDouble()).toFloat()
 
-        // Instantaneous stylus velocity in pixels/sec
+        // Instantaneous stylus velocity in canvas units/sec
         val velocity = dist / dt
 
         // 1. Base alpha at low/zero velocity

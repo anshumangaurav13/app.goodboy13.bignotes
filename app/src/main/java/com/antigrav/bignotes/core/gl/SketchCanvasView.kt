@@ -12,7 +12,6 @@ import android.view.MotionEvent
 import android.view.SurfaceView
 import android.view.VelocityTracker
 import androidx.graphics.lowlatency.GLFrontBufferedRenderer
-import androidx.input.motionprediction.MotionEventPredictor
 import com.antigrav.bignotes.core.clipboard.StrokeClipboard
 import com.antigrav.bignotes.core.color.CanvasColorSampler
 import com.antigrav.bignotes.core.eraser.EraserEngine
@@ -109,7 +108,6 @@ class SketchCanvasView @JvmOverloads constructor(
     }
 
     private var frontBufferedRenderer: GLFrontBufferedRenderer<FrontBufferPacket>? = null
-    private var motionPredictor: MotionEventPredictor? = null
     var penPredictionEnabled: Boolean = true
 
     // Active tool and eraser state
@@ -265,13 +263,34 @@ class SketchCanvasView @JvmOverloads constructor(
     var velocityBezierConfig: BezierControlPoints = com.antigrav.bignotes.core.model.VelocityCurveDefaults.CALLIGRAPHIC
     var velocityThinning: Float = 0.60f
 
-    // Stylus Velocity Tracker for dynamic pen thinning
+    // Stylus Velocity Tracker for dynamic pen thinning and EMA filtering
     private var lastPointX = 0f
     private var lastPointY = 0f
     private var lastScreenX = 0f
     private var lastScreenY = 0f
-    private var lastPointTime = 0L
+    private var lastPointTimeNanos = 0L
+    private var lastRecordedTimeNanos = 0L
     private var smoothedStylusSpeed = 0f
+
+    private fun getEventTimeNanos(event: MotionEvent, historyIndex: Int = -1): Long {
+        val rawNanos = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            if (historyIndex >= 0) {
+                event.getHistoricalEventTimeNanos(historyIndex)
+            } else {
+                event.eventTimeNanos
+            }
+        } else {
+            val ms = if (historyIndex >= 0) event.getHistoricalEventTime(historyIndex) else event.eventTime
+            ms * 1_000_000L
+        }
+        val monotonicNanos = if (lastRecordedTimeNanos > 0L && rawNanos <= lastRecordedTimeNanos) {
+            lastRecordedTimeNanos + 500_000L // Ensure strictly monotonic progression (+0.5ms) if raw millisecond didn't tick
+        } else {
+            rawNanos
+        }
+        lastRecordedTimeNanos = monotonicNanos
+        return monotonicNanos
+    }
 
     // Velocity-Adaptive EMA Filter for stroke smoothing / stabilization
     var smoothingLevel: Float = 0.0f
@@ -579,11 +598,6 @@ class SketchCanvasView @JvmOverloads constructor(
             isAutoHandwritingEnabled = false
         }
         frontBufferedRenderer = GLFrontBufferedRenderer(this, renderer)
-        try {
-            motionPredictor = MotionEventPredictor.newInstance(this)
-        } catch (e: Exception) {
-            motionPredictor = null
-        }
 
         holder.addCallback(object : android.view.SurfaceHolder.Callback {
             override fun surfaceCreated(holder: android.view.SurfaceHolder) {
@@ -827,7 +841,6 @@ class SketchCanvasView @JvmOverloads constructor(
                 isFingerDragging = false
                 requestInteractiveRedraw()
             }
-            motionPredictor?.record(event)
 
             val sx = event.getX(stylusPointerIndex)
             val sy = event.getY(stylusPointerIndex)
@@ -979,7 +992,8 @@ class SketchCanvasView @JvmOverloads constructor(
                         if (isErasing) {
                             startEraserSession(sx, sy, wx, wy, effectiveEraserMode)
                         } else {
-                            startStylusStroke(wx, wy, sx, sy, effPressure, event.eventTime)
+                            val timeNanos = getEventTimeNanos(event)
+                            startStylusStroke(wx, wy, sx, sy, effPressure, event.eventTime, timeNanos)
                         }
                     }
                     return true
@@ -1020,7 +1034,8 @@ class SketchCanvasView @JvmOverloads constructor(
                                 val fx: Float
                                 val fy: Float
                                 if (smoothingLevel > 0.01f) {
-                                    emaFilter.filter(wx, wy, event.eventTime)
+                                    val upTimeNanos = getEventTimeNanos(event)
+                                    emaFilter.filter(wx, wy, upTimeNanos)
                                     fx = emaFilter.filteredX
                                     fy = emaFilter.filteredY
                                 } else {
@@ -1057,6 +1072,8 @@ class SketchCanvasView @JvmOverloads constructor(
                         finalizeEraserSession(effectiveEraserMode)
                     } else {
                         emaFilter.reset()
+                        lastPointTimeNanos = 0L
+                        lastRecordedTimeNanos = 0L
                         activeStrokePoints.clear()
                         liveDabGenerator = null
                         frontBufferedRenderer?.renderFrontBufferedLayer(
@@ -1369,7 +1386,15 @@ class SketchCanvasView @JvmOverloads constructor(
         return super.onGenericMotionEvent(event)
     }
 
-    private fun startStylusStroke(wx: Float, wy: Float, sx: Float, sy: Float, pressure: Float, time: Long) {
+    private fun startStylusStroke(
+        wx: Float,
+        wy: Float,
+        sx: Float,
+        sy: Float,
+        pressure: Float,
+        time: Long,
+        timeNanos: Long
+    ) {
         onPenContactChanged?.invoke(true)
         val targetPageId = onStrokeStarted?.invoke()
         if (!targetPageId.isNullOrEmpty() && targetPageId != currentPageId) {
@@ -1381,13 +1406,14 @@ class SketchCanvasView @JvmOverloads constructor(
         lastPointY = wy
         lastScreenX = sx
         lastScreenY = sy
-        lastPointTime = time
+        lastPointTimeNanos = timeNanos
+        lastRecordedTimeNanos = timeNanos
         smoothedStylusSpeed = 0f
 
         val fx: Float
         val fy: Float
         if (smoothingLevel > 0.01f) {
-            emaFilter.filter(wx, wy, time)
+            emaFilter.filter(wx, wy, timeNanos)
             fx = emaFilter.filteredX
             fy = emaFilter.filteredY
         } else {
@@ -1431,7 +1457,8 @@ class SketchCanvasView @JvmOverloads constructor(
         val curSy = event.getY(stylusPointerIndex)
 
         if (activeStrokePoints.isEmpty()) {
-            startStylusStroke(wx, wy, curSx, curSy, effPressure, event.eventTime)
+            val timeNanos = getEventTimeNanos(event)
+            startStylusStroke(wx, wy, curSx, curSy, effPressure, event.eventTime, timeNanos)
             return
         }
 
@@ -1489,20 +1516,26 @@ class SketchCanvasView @JvmOverloads constructor(
                 val hsx = event.getHistoricalX(stylusPointerIndex, h)
                 val hsy = event.getHistoricalY(stylusPointerIndex, h)
                 val hTime = event.getHistoricalEventTime(h)
+                val hTimeNanos = getEventTimeNanos(event, h)
                 val (hwx, hwy) = screenToWorld(hsx, hsy)
                 val hRawPressure = event.getHistoricalPressure(stylusPointerIndex, h).coerceIn(0.0f, 1.0f)
                 val hBakedPressure = bezierConfig.solveY(hRawPressure)
 
                 // Calculate instantaneous velocity in physical screen pixels per millisecond
-                val dt = ((hTime - lastPointTime).coerceAtLeast(1L)).toFloat()
+                val dtNanos = if (lastPointTimeNanos > 0L && hTimeNanos > lastPointTimeNanos) {
+                    hTimeNanos - lastPointTimeNanos
+                } else {
+                    2_777_778L // fallback ~360Hz (2.77ms)
+                }
+                val dtMs = (dtNanos.toFloat() / 1_000_000f).coerceIn(0.2f, 50f)
                 val screenDist = kotlin.math.hypot((hsx - lastScreenX).toDouble(), (hsy - lastScreenY).toDouble()).toFloat()
-                val speed = screenDist / dt // screen px/ms
+                val speed = screenDist / dtMs // screen px/ms
                 smoothedStylusSpeed = smoothedStylusSpeed * 0.40f + speed * 0.60f
                 lastScreenX = hsx
                 lastScreenY = hsy
                 lastPointX = hwx
                 lastPointY = hwy
-                lastPointTime = hTime
+                lastPointTimeNanos = hTimeNanos
 
                 val speedFactor = (smoothedStylusSpeed / (smoothedStylusSpeed + 1.5f)).coerceIn(0.0f, 1.0f)
                 val reduction = velocityBezierConfig.solveY(speedFactor)
@@ -1516,7 +1549,7 @@ class SketchCanvasView @JvmOverloads constructor(
                 val fx: Float
                 val fy: Float
                 if (smoothingLevel > 0.01f) {
-                    emaFilter.filter(hwx, hwy, hTime)
+                    emaFilter.filter(hwx, hwy, hTimeNanos)
                     fx = emaFilter.filteredX
                     fy = emaFilter.filteredY
                 } else {
@@ -1530,15 +1563,21 @@ class SketchCanvasView @JvmOverloads constructor(
             }
 
             // Current event point
-            val dt = ((event.eventTime - lastPointTime).coerceAtLeast(1L)).toFloat()
+            val curTimeNanos = getEventTimeNanos(event)
+            val dtNanos = if (lastPointTimeNanos > 0L && curTimeNanos > lastPointTimeNanos) {
+                curTimeNanos - lastPointTimeNanos
+            } else {
+                2_777_778L
+            }
+            val dtMs = (dtNanos.toFloat() / 1_000_000f).coerceIn(0.2f, 50f)
             val screenDist = kotlin.math.hypot((curSx - lastScreenX).toDouble(), (curSy - lastScreenY).toDouble()).toFloat()
-            val speed = screenDist / dt
+            val speed = screenDist / dtMs
             smoothedStylusSpeed = smoothedStylusSpeed * 0.40f + speed * 0.60f
             lastScreenX = curSx
             lastScreenY = curSy
             lastPointX = wx
             lastPointY = wy
-            lastPointTime = event.eventTime
+            lastPointTimeNanos = curTimeNanos
 
             val speedFactor = (smoothedStylusSpeed / (smoothedStylusSpeed + 1.5f)).coerceIn(0.0f, 1.0f)
             val reduction = velocityBezierConfig.solveY(speedFactor)
@@ -1554,7 +1593,7 @@ class SketchCanvasView @JvmOverloads constructor(
             val curFx: Float
             val curFy: Float
             if (smoothingLevel > 0.01f) {
-                emaFilter.filter(wx, wy, event.eventTime)
+                emaFilter.filter(wx, wy, curTimeNanos)
                 curFx = emaFilter.filteredX
                 curFy = emaFilter.filteredY
             } else {
@@ -1563,12 +1602,6 @@ class SketchCanvasView @JvmOverloads constructor(
             }
             activeStrokePoints.add(StrokePoint(curFx, curFy, finalEffPressure, event.eventTime))
             newDabs.addAll(gen.addPoint(curFx, curFy, finalEffPressure))
-
-            if (penPredictionEnabled) {
-                try {
-                    motionPredictor?.record(event)
-                } catch (e: Exception) {}
-            }
 
             if (newDabs.isNotEmpty()) {
                 frontBufferedRenderer?.renderFrontBufferedLayer(
@@ -1579,6 +1612,8 @@ class SketchCanvasView @JvmOverloads constructor(
 
     private fun finalizeCurrentStroke() {
         emaFilter.reset()
+        lastPointTimeNanos = 0L
+        lastRecordedTimeNanos = 0L
         onPenContactChanged?.invoke(false)
         if (activeStrokePoints.isNotEmpty()) {
             val isHighlighter = activeTool == ActiveTool.HIGHLIGHTER
@@ -2208,7 +2243,6 @@ class SketchCanvasView @JvmOverloads constructor(
         }
         velocityTracker?.recycle()
         velocityTracker = null
-        motionPredictor = null
         frontBufferedRenderer?.release(true)
         renderer.cleanup()
     }
