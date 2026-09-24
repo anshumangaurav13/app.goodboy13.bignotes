@@ -1303,10 +1303,6 @@ fun BigNotesMainScreen(
                     activeSettingsCategory = null
                     showSettingsDialog = true
                 },
-                onOpenHelpAbout = {
-                    activeSettingsCategory = SettingsCategory.HELP
-                    showSettingsDialog = true
-                },
                 searchHits = searchHits,
                 onSearchQueryChanged = onSearchQueryChanged,
                 onSearchHitSelected = { hit ->

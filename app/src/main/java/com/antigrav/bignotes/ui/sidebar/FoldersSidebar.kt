@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import com.antigrav.bignotes.ui.components.InPlaceRenameField
 import com.antigrav.bignotes.ui.components.SwipeToRevealItem
 import com.antigrav.bignotes.ui.model.FolderItem
@@ -39,7 +38,6 @@ fun FoldersSidebar(
     onFolderRename: ((folderId: String, newName: String) -> Unit)? = null,
     onAddFolder: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenHelpAbout: () -> Unit = {},
     onToggleCollapse: (() -> Unit)? = null,
     statusBarHeight: Dp = 0.dp,
     modifier: Modifier = Modifier
@@ -167,7 +165,7 @@ fun FoldersSidebar(
             }
         }
 
-        // Bottom Footer with Sleek Rounded Pill Dock
+        // Bottom Footer with Sleek Rounded Pill Dock (Settings)
         Surface(
             shape = RoundedCornerShape(14.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
@@ -176,13 +174,11 @@ fun FoldersSidebar(
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 8.dp)
         ) {
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(46.dp)
-                    .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceEvenly
+                    .height(46.dp),
+                contentAlignment = Alignment.Center
             ) {
                 IconButton(
                     onClick = onOpenSettings,
@@ -191,23 +187,6 @@ fun FoldersSidebar(
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = "Settings",
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .height(18.dp)
-                        .width(1.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                )
-                IconButton(
-                    onClick = onOpenHelpAbout,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                        contentDescription = "Help & About",
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                         modifier = Modifier.size(20.dp)
                     )

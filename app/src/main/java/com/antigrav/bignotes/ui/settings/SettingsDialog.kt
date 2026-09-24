@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -43,7 +44,6 @@ import com.antigrav.bignotes.core.model.PaperColor
 import com.antigrav.bignotes.core.model.PressureCurveDefaults
 import com.antigrav.bignotes.core.model.VelocityCurveDefaults
 import com.antigrav.bignotes.ui.components.BezierCurveGraph
-import com.antigrav.bignotes.ui.theme.CustomIcons
 import com.antigrav.bignotes.ui.theme.InkPalette
 import com.antigrav.bignotes.ui.theme.ThemeConfig
 import java.util.Locale
@@ -89,7 +89,7 @@ enum class SettingsCategory(
     ),
     HELP(
         "Help & Guide",
-        "Tools, gestures, export, search & shortcuts",
+        "Gestures, lasso, math solver & export",
         Icons.AutoMirrored.Outlined.HelpOutline,
         Color(0xFF3B82F6)
     )
@@ -996,116 +996,63 @@ private fun HelpGuideDetail() {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        SectionHeader("WRITING & INKING")
-        HelpItemCard(
-            icon = CustomIcons.FountainPen,
-            title = "Fountain Pen & Pencil",
-            description = "Fountain Pen provides smooth, expressive pressure-sensitive ink with velocity thinning. The Textured Pencil gives responsive sketching and shading. Quickly toggle between 6 preset line sizes (1 to 12) and curated colors."
-        )
-        HelpItemCard(
-            icon = CustomIcons.Highlighter,
-            title = "Highlighter Tool",
-            description = "Semi-transparent fluorescent chisel highlighter designed to emphasize handwritten notes and diagrams while maintaining full legibility of ink lines underneath."
-        )
+        SectionHeader("CANVAS & GESTURES")
         HelpItemCard(
             icon = Icons.Default.TouchApp,
-            title = "Stylus vs. Finger Gestures",
-            description = "Your S Pen / stylus is reserved exclusively for writing, sketching, and lasso selection with complete palm rejection. Use fingers to smoothly pan the infinite canvas, scroll, and pinch-to-zoom."
+            title = "Stylus & Fingers",
+            description = "Use your stylus to write and draw with full palm rejection. Use fingers to pan the canvas and pinch-to-zoom."
+        )
+        HelpItemCard(
+            icon = Icons.AutoMirrored.Filled.Undo,
+            title = "Undo & Redo Taps",
+            description = "Tap with 2 fingers to Undo. Tap with 3 fingers to Redo. Toggle this in Gestures settings."
         )
         HelpItemCard(
             icon = Icons.Default.ChangeHistory,
             title = "QuickShape Snapping",
-            description = "Draw lines, rectangles, circles, ellipses, triangles, or stars and hold your stylus still at the end of the stroke. BigNotes automatically snaps your stroke into a crisp geometric shape."
-        )
-        HelpItemCard(
-            icon = Icons.Default.Tune,
-            title = "Pressure & Velocity Bézier Curves",
-            description = "Fine-tune stylus pressure response and calligraphic velocity thinning using the interactive 4x4 Bézier curve graph in Settings, with real-time feedback on the live test pad."
+            description = "Draw any line, circle, rectangle, or shape and pause at the end of the stroke to snap into clean geometry."
         )
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        SectionHeader("EDITING & LASSO")
+        SectionHeader("LASSO & MATH")
         HelpItemCard(
             icon = Icons.Default.Gesture,
-            title = "Lasso Selection & Moving",
-            description = "Circle any strokes or drawings with the Lasso tool. Drag inside the selection box to reposition elements anywhere on the canvas."
+            title = "Lasso Selection",
+            description = "Circle strokes or images with the Lasso to move, duplicate, or delete them anywhere on the canvas."
+        )
+        HelpItemCard(
+            icon = Icons.Default.Calculate,
+            title = "Math Solver",
+            description = "Write an equation ending with '=' or select handwritten math with Lasso and tap 'Solve Math' to calculate answers inline."
         )
         HelpItemCard(
             icon = Icons.Default.ContentCopy,
-            title = "Copy as Text (Offline OCR)",
-            description = "Select your handwriting with the Lasso and tap 'Copy as Text' in the floating toolbar. BigNotes uses the on-device ML Kit engine to transcribe handwriting directly to your clipboard."
-        )
-        HelpItemCard(
-            icon = Icons.Default.ContentCut,
-            title = "Duplicate & Delete",
-            description = "Quickly clone or delete selected stroke clusters using the floating action controls on any active lasso selection."
+            title = "Copy as Text",
+            description = "Select handwriting with the Lasso and tap 'Copy Text' to transcribe it directly to the clipboard using on-device ML."
         )
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        SectionHeader("HANDWRITING SEARCH & RECOGNITION")
+        SectionHeader("SEARCH & EXPORT")
         HelpItemCard(
             icon = Icons.Default.Search,
-            title = "Instant Offline Search",
-            description = "Type any keyword into the sidebar search bar to search across all your handwritten notes. Search operates entirely offline on your device with zero cloud latency."
+            title = "Handwriting Search",
+            description = "Type keywords into the sidebar to search notes offline and jump directly to highlighted matches on canvas."
         )
-        HelpItemCard(
-            icon = Icons.Default.FindInPage,
-            title = "Jump-to-Canvas Highlighting",
-            description = "Tap any search match in the sidebar to open that note and smoothly pan the canvas right to that stroke, highlighted with a temporary bounding box."
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        SectionHeader("SHARING & EXPORT")
         HelpItemCard(
             icon = Icons.Default.Share,
-            title = "Share Button & Sidebar Swipe",
-            description = "Tap the Share icon in the top toolbar or swipe right on any note item in the sidebar list to open the unified Share & Export dialog."
-        )
-        HelpItemCard(
-            icon = Icons.Default.PictureAsPdf,
-            title = "Searchable PDF Export",
-            description = "Export paginated PDFs (Letter, A4, Legal 14) with an invisible embedded text layer matching your handwriting layout, making notes selectable and searchable in any PDF viewer."
-        )
-        HelpItemCard(
-            icon = Icons.Default.Description,
-            title = "Structured Markdown (.md) Export",
-            description = "Export notes as clean Markdown text organized by recognized handwriting lines and paragraphs for easy archiving or pasting into documentation."
+            title = "PDF & Markdown Export",
+            description = "Tap Share in the toolbar or swipe right on a note to export searchable paginated PDFs or formatted Markdown."
         )
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        SectionHeader("BACKUP & TIMELINE (GIT ARCHITECTURE)")
+        SectionHeader("BACKUP & STORAGE")
         HelpItemCard(
             icon = Icons.Default.Folder,
-            title = "Automated Deduplicated Snapshots",
-            description = "Select a storage folder via Android SAF. BigNotes automatically creates deduplicated point-in-time snapshots when the app is minimized without wasting disk space."
-        )
-        HelpItemCard(
-            icon = Icons.Default.History,
-            title = "Point-in-Time Restore & Cherry-Pick",
-            description = "Open the Backup Timeline in Settings to view previous snapshots. Roll back the entire notebook or cherry-pick individual notes to restore."
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        SectionHeader("GESTURES & SHORTCUTS")
-        HelpItemCard(
-            icon = Icons.Default.Undo,
-            title = "2-Finger & 3-Finger Tap",
-            description = "Tap two fingers anywhere on the canvas to Undo. Tap three fingers to Redo. Can be toggled in Gestures settings."
-        )
-        HelpItemCard(
-            icon = Icons.Default.Fullscreen,
-            title = "Distraction-Free Fullscreen",
-            description = "Tap the sidebar toggle button in the top toolbar to hide folders and notes, expanding the inking canvas across the full screen."
-        )
-        HelpItemCard(
-            icon = Icons.Default.DeleteSweep,
-            title = "Safe Note Deletion",
-            description = "Swipe left on any note in the sidebar to reveal the delete button. The button blinks for 3 seconds before automatically snapping shut if unconfirmed."
+            title = "Automatic Snapshots",
+            description = "Select a backup folder in Backup & Storage to automatically save versioned revision history when leaving the app."
         )
 
         Spacer(modifier = Modifier.height(8.dp))

@@ -13,7 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.automirrored.filled.ViewSidebar
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
@@ -55,7 +54,6 @@ fun NotesSidebar(
     isFoldersVisible: Boolean = true,
     onToggleFoldersVisible: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
-    onOpenHelpAbout: (() -> Unit)? = null,
     searchHits: Map<String, List<SearchHit>> = emptyMap(),
     onSearchQueryChanged: ((String) -> Unit)? = null,
     onSearchHitSelected: ((SearchHit) -> Unit)? = null,
@@ -325,8 +323,8 @@ fun NotesSidebar(
             }
         }
 
-        // Bottom Dock when Folders are collapsed
-        if (!isFoldersVisible && (onOpenSettings != null || onOpenHelpAbout != null)) {
+        // Bottom Dock when Folders are collapsed (Settings)
+        if (!isFoldersVisible && onOpenSettings != null) {
             HorizontalDivider(
                 thickness = 0.5.dp,
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
@@ -339,47 +337,22 @@ fun NotesSidebar(
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 8.dp)
             ) {
-                Row(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp)
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                        .height(46.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    if (onOpenSettings != null) {
-                        IconButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Settings",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    if (onOpenSettings != null && onOpenHelpAbout != null) {
-                        Box(
-                            modifier = Modifier
-                                .height(18.dp)
-                                .width(1.dp)
-                                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                            modifier = Modifier.size(20.dp)
                         )
-                    }
-                    if (onOpenHelpAbout != null) {
-                        IconButton(
-                            onClick = onOpenHelpAbout,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                                contentDescription = "Help & About",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
                     }
                 }
             }
