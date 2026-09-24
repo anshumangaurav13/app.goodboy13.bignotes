@@ -81,7 +81,9 @@ import androidx.compose.ui.unit.dp
 import com.antigrav.bignotes.ui.theme.BigNotesTheme
 import com.antigrav.bignotes.ui.theme.InkPalette
 import com.antigrav.bignotes.ui.theme.ThemeConfig
-import com.antigrav.bignotes.ui.toolbar.NoteToolbar
+import com.antigrav.bignotes.ui.toolbar.DockEdge
+import com.antigrav.bignotes.ui.toolbar.FloatingNoteHeader
+import com.antigrav.bignotes.ui.toolbar.FloatingNoteToolbar
 import kotlin.math.roundToInt
 import com.antigrav.bignotes.core.math.model.MathOverlayState
 import com.antigrav.bignotes.core.math.model.MathResult
@@ -870,7 +872,7 @@ fun BigNotesMainScreen(
         label = "statusBarHeight"
     )
 
-    val animatedTopOffsetPx = with(density) { (animatedStatusBarDp + 54.dp).toPx() }
+    val animatedTopOffsetPx = with(density) { animatedStatusBarDp.toPx() }
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -1069,131 +1071,143 @@ fun BigNotesMainScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 2. Toolbar & Status Bar overlay
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = animatedSidebarWidthDp)
-        ) {
-            if (animatedStatusBarDp > 0.dp) {
-                Spacer(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(animatedStatusBarDp)
-                        .background(MaterialTheme.colorScheme.surface)
-                )
-            }
-            val isHighlighterActive = activeTool == ActiveTool.HIGHLIGHTER
-            val rawPalette = if (isHighlighterActive) {
-                InkPalette.getHighlighterColors()
+        // 2. Floating Note Header (Option A: Minimal top-left pill for sidebar toggle, note title & export)
+        FloatingNoteHeader(
+            isSidebarVisible = isSidebarVisible,
+            onToggleSidebar = onToggleSidebar,
+            folderTitle = currentFolder?.name ?: if (folders.isEmpty()) "No Folders" else "Main",
+            noteTitle = currentNote?.title ?: if (folders.isEmpty()) "Create folder first" else "No Note",
+            onRenameCurrentNote = { newTitle ->
+                currentNote?.let { target ->
+                    val now = System.currentTimeMillis()
+                    val updated = target.copy(title = newTitle, updatedAt = now)
+                    allNotes = allNotes.map { note ->
+                        if (note.id == target.id) updated else note
+                    }
+                    coroutineScope.launch(Dispatchers.IO) {
+                        noteStorageManager.saveNote(updated, noteStrokes[target.id] ?: emptyList(), zoomScale, images = canvasView?.getImages() ?: noteImages[target.id] ?: emptyList())
+                    }
+                }
+            },
+            onExportNote = {
+                exportTargetNote = currentNote
+                showExportDialog = true
+            },
+            sidebarOffsetDp = animatedSidebarWidthDp,
+            statusBarHeightDp = animatedStatusBarDp
+        )
+
+        // 3. Collapsible Floating Inking Toolbar with Edge Docking and Radial Color/Size Flyout
+        val isHighlighterActive = activeTool == ActiveTool.HIGHLIGHTER
+        val rawPalette = if (isHighlighterActive) {
+            InkPalette.getHighlighterColors()
+        } else {
+            InkPalette.getColors()
+        }
+        val displayPalette = remember(rawPalette, themeConfig.isDark) {
+            if (themeConfig.isDark) {
+                rawPalette.map { item ->
+                    val c = item.color
+                    item.copy(color = Color(1f - c.red, 1f - c.green, 1f - c.blue, c.alpha))
+                }
             } else {
-                InkPalette.getColors()
+                rawPalette
             }
-            val displayPalette = remember(rawPalette, themeConfig.isDark) {
-                if (themeConfig.isDark) {
-                    rawPalette.map { item ->
-                        val c = item.color
-                        item.copy(color = Color(1f - c.red, 1f - c.green, 1f - c.blue, c.alpha))
+        }
+        val currentColorIndex = if (isHighlighterActive) selectedHighlighterColorIndex else selectedColorIndex
+
+        val savedDockEdgeName = remember(prefs) {
+            prefs.getString("floating_toolbar_edge", DockEdge.TOP.name) ?: DockEdge.TOP.name
+        }
+        val savedDockEdge = remember(savedDockEdgeName) {
+            try { DockEdge.valueOf(savedDockEdgeName) } catch (e: Exception) { DockEdge.TOP }
+        }
+        val savedPosFraction = remember(prefs) {
+            prefs.getFloat("floating_toolbar_pos_fraction", 0.5f)
+        }
+        val savedIsCollapsed = remember(prefs) {
+            prefs.getBoolean("floating_toolbar_collapsed", false)
+        }
+
+        FloatingNoteToolbar(
+            activeTool = activeTool,
+            onToolChange = { tool ->
+                activeTool = tool
+                canvasView?.let { view ->
+                    view.activeTool = tool
+                    if (tool == ActiveTool.HIGHLIGHTER) {
+                        view.renderer.currentTone = PencilTone.LIGHT
+                        val hlPalette = InkPalette.getHighlighterColors()
+                        val chosen = hlPalette.getOrElse(selectedHighlighterColorIndex) { hlPalette[0] }
+                        view.renderer.currentColorRgb = chosen.colorRgb
+                        view.renderer.currentPaletteIndex = chosen.slotIndex
+                    } else if (tool == ActiveTool.FOUNTAIN_PEN) {
+                        view.renderer.currentTone = PencilTone.INK_BLACK
+                        val inkPalette = InkPalette.getColors()
+                        val chosen = inkPalette.getOrElse(selectedColorIndex) { inkPalette[0] }
+                        view.renderer.currentColorRgb = chosen.colorRgb
+                        view.renderer.currentPaletteIndex = chosen.slotIndex
+                    } else if (tool == ActiveTool.PENCIL) {
+                        view.renderer.currentTone = PencilTone.SOFT
+                        val inkPalette = InkPalette.getColors()
+                        val chosen = inkPalette.getOrElse(selectedColorIndex) { inkPalette[0] }
+                        view.renderer.currentColorRgb = chosen.colorRgb
+                        view.renderer.currentPaletteIndex = chosen.slotIndex
+                    }
+                }
+            },
+            strokeSize = strokeSize,
+            onStrokeSizeChange = { newSize ->
+                strokeSize = newSize
+                canvasView?.renderer?.currentBaseWidth = newSize
+            },
+            paletteColors = displayPalette,
+            selectedColorIndex = currentColorIndex,
+            onColorSelect = { idx ->
+                if (activeTool == ActiveTool.HIGHLIGHTER) {
+                    selectedHighlighterColorIndex = idx
+                    prefs.edit().putInt("selected_highlighter_color_idx", idx).apply()
+                    val hlPalette = InkPalette.getHighlighterColors()
+                    val chosen = hlPalette.getOrElse(idx) { hlPalette[0] }
+                    canvasView?.let { view ->
+                        view.renderer.currentColorRgb = chosen.colorRgb
+                        view.renderer.currentPaletteIndex = chosen.slotIndex
                     }
                 } else {
-                    rawPalette
-                }
-            }
-            val currentColorIndex = if (isHighlighterActive) selectedHighlighterColorIndex else selectedColorIndex
-
-            NoteToolbar(
-                isSidebarVisible = isSidebarVisible,
-                onToggleSidebar = onToggleSidebar,
-                folderTitle = currentFolder?.name ?: if (folders.isEmpty()) "No Folders" else "Main",
-                noteTitle = currentNote?.title ?: if (folders.isEmpty()) "Create folder first" else "No Note",
-                activeTool = activeTool,
-                onToolChange = { tool ->
-                    activeTool = tool
+                    selectedColorIndex = idx
+                    prefs.edit().putInt("selected_color_idx", idx).apply()
+                    val inkPalette = InkPalette.getColors()
+                    val chosen = inkPalette.getOrElse(idx) { inkPalette[0] }
                     canvasView?.let { view ->
-                        view.activeTool = tool
-                        if (tool == ActiveTool.HIGHLIGHTER) {
-                            view.renderer.currentTone = PencilTone.LIGHT
-                            val hlPalette = InkPalette.getHighlighterColors()
-                            val chosen = hlPalette.getOrElse(selectedHighlighterColorIndex) { hlPalette[0] }
-                            view.renderer.currentColorRgb = chosen.colorRgb
-                            view.renderer.currentPaletteIndex = chosen.slotIndex
-                        } else if (tool == ActiveTool.FOUNTAIN_PEN) {
-                            view.renderer.currentTone = PencilTone.INK_BLACK
-                            val inkPalette = InkPalette.getColors()
-                            val chosen = inkPalette.getOrElse(selectedColorIndex) { inkPalette[0] }
-                            view.renderer.currentColorRgb = chosen.colorRgb
-                            view.renderer.currentPaletteIndex = chosen.slotIndex
-                        } else if (tool == ActiveTool.PENCIL) {
-                            view.renderer.currentTone = PencilTone.SOFT
-                            val inkPalette = InkPalette.getColors()
-                            val chosen = inkPalette.getOrElse(selectedColorIndex) { inkPalette[0] }
-                            view.renderer.currentColorRgb = chosen.colorRgb
-                            view.renderer.currentPaletteIndex = chosen.slotIndex
-                        }
+                        view.renderer.currentColorRgb = chosen.colorRgb
+                        view.renderer.currentPaletteIndex = chosen.slotIndex
                     }
-                },
-                strokeSize = strokeSize,
-                onStrokeSizeChange = { newSize ->
-                    strokeSize = newSize
-                    canvasView?.renderer?.currentBaseWidth = newSize
-                },
-                paletteColors = displayPalette,
-                selectedColorIndex = currentColorIndex,
-                onColorSelect = { idx ->
-                    if (activeTool == ActiveTool.HIGHLIGHTER) {
-                        selectedHighlighterColorIndex = idx
-                        prefs.edit().putInt("selected_highlighter_color_idx", idx).apply()
-                        val hlPalette = InkPalette.getHighlighterColors()
-                        val chosen = hlPalette.getOrElse(idx) { hlPalette[0] }
-                        canvasView?.let { view ->
-                            view.renderer.currentColorRgb = chosen.colorRgb
-                            view.renderer.currentPaletteIndex = chosen.slotIndex
-                        }
-                    } else {
-                        selectedColorIndex = idx
-                        prefs.edit().putInt("selected_color_idx", idx).apply()
-                        val inkPalette = InkPalette.getColors()
-                        val chosen = inkPalette.getOrElse(idx) { inkPalette[0] }
-                        canvasView?.let { view ->
-                            view.renderer.currentColorRgb = chosen.colorRgb
-                            view.renderer.currentPaletteIndex = chosen.slotIndex
-                        }
-                    }
-                },
-                zoomScale = zoomScale,
-                canUndo = canUndo,
-                canRedo = canRedo,
-                onUndo = { canvasView?.undo() },
-                onRedo = { canvasView?.redo() },
-                onResetZoom = { canvasView?.resetZoom() },
-                onRenameCurrentNote = { newTitle ->
-                    currentNote?.let { target ->
-                        val now = System.currentTimeMillis()
-                        val updated = target.copy(title = newTitle, updatedAt = now)
-                        allNotes = allNotes.map { note ->
-                            if (note.id == target.id) updated else note
-                        }
-                        coroutineScope.launch(Dispatchers.IO) {
-                            noteStorageManager.saveNote(updated, noteStrokes[target.id] ?: emptyList(), zoomScale, images = canvasView?.getImages() ?: noteImages[target.id] ?: emptyList())
-                        }
-                    }
-                },
-                onInsertImage = {
-                    photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
-                onExportNote = {
-                    exportTargetNote = currentNote
-                    showExportDialog = true
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-            HorizontalDivider(
-                thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-            )
-        }
+                }
+            },
+            zoomScale = zoomScale,
+            canUndo = canUndo,
+            canRedo = canRedo,
+            onUndo = { canvasView?.undo() },
+            onRedo = { canvasView?.redo() },
+            onResetZoom = { canvasView?.resetZoom() },
+            onInsertImage = {
+                photoPickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
+            initialDockEdge = savedDockEdge,
+            initialPosFraction = savedPosFraction,
+            initialIsCollapsed = savedIsCollapsed,
+            onDockStateChanged = { edge, fraction, collapsed ->
+                prefs.edit()
+                    .putString("floating_toolbar_edge", edge.name)
+                    .putFloat("floating_toolbar_pos_fraction", fraction)
+                    .putBoolean("floating_toolbar_collapsed", collapsed)
+                    .apply()
+            },
+            sidebarOffsetPx = animatedSidebarWidthPx,
+            statusBarHeightPx = statusBarTopPx.toFloat()
+        )
 
         // Dual Sidebar Overlay (smooth animated slide on top of canvas)
         if (animatedSidebarWidthPx > 0f) {
