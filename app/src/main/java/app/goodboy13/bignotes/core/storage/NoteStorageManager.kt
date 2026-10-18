@@ -257,33 +257,91 @@ class NoteStorageManager(private val context: Context) {
     }
 
     fun loadAllNotesMetadataFast(): List<NoteItem> {
+        val savedIds = listSavedNoteIds().toSet()
+        if (savedIds.isEmpty()) {
+            val empty = emptyList<NoteItem>()
+            saveNotesIndex(empty)
+            return empty
+        }
+
         val cached = loadNotesIndex()
-        if (cached != null && cached.isNotEmpty()) {
+        val validCached = cached?.filter { savedIds.contains(it.id) } ?: emptyList()
+        val cachedIds = validCached.map { it.id }.toSet()
+
+        // If cache matches disk files exactly, return it directly without extra I/O
+        if (cached != null && cachedIds.size == savedIds.size && cached.size == validCached.size) {
             return cached
         }
-        val savedIds = listSavedNoteIds()
-        if (savedIds.isEmpty()) return emptyList()
 
-        val list = mutableListOf<NoteItem>()
-        for (id in savedIds) {
-            val meta = readNoteMetadata(id) ?: continue
-            list.add(
-                NoteItem(
-                    id = meta.noteId,
-                    folderId = meta.folderId,
-                    title = meta.title,
-                    previewText = "Note",
-                    createdAt = meta.createdAt,
-                    updatedAt = meta.updatedAt,
-                    maxY = 0f,
-                    strokeCount = 0
+        // Discover missing notes from disk and reconcile
+        val missingIds = savedIds - cachedIds
+        val discoveredNotes = mutableListOf<NoteItem>()
+        for (id in missingIds) {
+            val file = getFileForNote(id)
+            if (!file.exists()) continue
+            try {
+                val bytes = file.readBytes()
+                val doc = BigNoteBinaryFormat.deserialize(bytes)
+                val count = doc.strokes.size
+                var maxY = 0f
+                for (s in doc.strokes) {
+                    val halfBase = s.baseWidth * 0.5f
+                    for (p in s.points) {
+                        val ptY = p.y + halfBase * p.pressure
+                        if (ptY > maxY) maxY = ptY
+                    }
+                }
+                val preview = if (count == 0) "Empty note" else "$count stroke${if (count == 1) "" else "s"}"
+                discoveredNotes.add(
+                    NoteItem(
+                        id = doc.noteId,
+                        folderId = doc.folderId,
+                        title = doc.title,
+                        previewText = preview,
+                        createdAt = doc.createdAt,
+                        updatedAt = doc.updatedAt,
+                        maxY = maxY,
+                        strokeCount = count
+                    )
                 )
-            )
+            } catch (e: Exception) {
+                val meta = readNoteMetadata(id)
+                if (meta != null) {
+                    discoveredNotes.add(
+                        NoteItem(
+                            id = meta.noteId,
+                            folderId = meta.folderId,
+                            title = meta.title,
+                            previewText = "Note",
+                            createdAt = meta.createdAt,
+                            updatedAt = meta.updatedAt,
+                            maxY = 0f,
+                            strokeCount = 0
+                        )
+                    )
+                }
+            }
         }
-        if (list.isNotEmpty()) {
-            saveNotesIndex(list)
+
+        val reconciled = validCached + discoveredNotes
+
+        // Ensure every folder referenced by a note exists in folders.json
+        val existingFolders = loadFolders() ?: emptyList()
+        val existingFolderIds = existingFolders.map { it.id }.toSet()
+        val missingFolderIds = reconciled.map { it.folderId }.distinct().filter { !existingFolderIds.contains(it) }
+        if (missingFolderIds.isNotEmpty()) {
+            val addedFolders = missingFolderIds.map { fId ->
+                app.goodboy13.bignotes.ui.model.FolderItem(
+                    id = fId,
+                    name = if (fId == "folder_main") "Main" else "Restored Folder",
+                    noteCount = 0
+                )
+            }
+            saveFolders(existingFolders + addedFolders)
         }
-        return list
+
+        saveNotesIndex(reconciled)
+        return reconciled
     }
 
     fun saveFolders(folders: List<app.goodboy13.bignotes.ui.model.FolderItem>) {

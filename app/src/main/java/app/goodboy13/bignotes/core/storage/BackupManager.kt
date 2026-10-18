@@ -511,6 +511,16 @@ object BackupManager {
                 val updatedAt = parsedDoc?.updatedAt ?: entry.updatedAt
                 val strokesCount = parsedDoc?.strokes?.size ?: 0
                 val preview = if (strokesCount == 0) "Empty note" else "$strokesCount stroke${if (strokesCount == 1) "" else "s"}"
+                var maxY = 0f
+                if (parsedDoc != null) {
+                    for (s in parsedDoc.strokes) {
+                        val halfBase = s.baseWidth * 0.5f
+                        for (p in s.points) {
+                            val ptY = p.y + halfBase * p.pressure
+                            if (ptY > maxY) maxY = ptY
+                        }
+                    }
+                }
 
                 restoredNotes.add(
                     NoteItem(
@@ -519,7 +529,9 @@ object BackupManager {
                         title = title,
                         previewText = preview,
                         createdAt = createdAt,
-                        updatedAt = updatedAt
+                        updatedAt = updatedAt,
+                        maxY = maxY,
+                        strokeCount = strokesCount
                     )
                 )
             }
@@ -541,6 +553,25 @@ object BackupManager {
             }
 
             storageManager.saveFolders(finalFolders)
+
+            // If a blank default note (e.g. note_1) was created on clean install and is not part of this snapshot,
+            // clean up its file so it doesn't linger as an unwanted orphan
+            if (manifest.notes.none { it.id == "note_1" }) {
+                val placeholder = storageManager.getFileForNote("note_1")
+                if (placeholder.exists()) {
+                    try {
+                        val doc = BigNoteBinaryFormat.deserialize(placeholder.readBytes())
+                        if (doc.strokes.isEmpty()) {
+                            placeholder.delete()
+                        }
+                    } catch (e: Exception) {
+                        placeholder.delete()
+                    }
+                }
+            }
+
+            // CRITICAL: Persist all restored notes to notes_index.json!
+            storageManager.saveNotesIndex(restoredNotes)
 
             RestoreResult(
                 success = true,
@@ -600,6 +631,16 @@ object BackupManager {
             val updatedAt = parsedDoc?.updatedAt ?: noteEntry.updatedAt
             val strokesCount = parsedDoc?.strokes?.size ?: 0
             val preview = if (strokesCount == 0) "Empty note" else "$strokesCount stroke${if (strokesCount == 1) "" else "s"}"
+            var maxY = 0f
+            if (parsedDoc != null) {
+                for (s in parsedDoc.strokes) {
+                    val halfBase = s.baseWidth * 0.5f
+                    for (p in s.points) {
+                        val ptY = p.y + halfBase * p.pressure
+                        if (ptY > maxY) maxY = ptY
+                    }
+                }
+            }
 
             val restoredNote = NoteItem(
                 id = noteEntry.id,
@@ -607,8 +648,18 @@ object BackupManager {
                 title = title,
                 previewText = preview,
                 createdAt = createdAt,
-                updatedAt = updatedAt
+                updatedAt = updatedAt,
+                maxY = maxY,
+                strokeCount = strokesCount
             )
+
+            val currentIndex = storageManager.loadNotesIndex() ?: emptyList()
+            val nextIndex = if (currentIndex.any { it.id == restoredNote.id }) {
+                currentIndex.map { if (it.id == restoredNote.id) restoredNote else it }
+            } else {
+                listOf(restoredNote) + currentIndex
+            }
+            storageManager.saveNotesIndex(nextIndex)
 
             val restoredFolder = manifest.folders.find { it.id == folderId }
                 ?: FolderItem(id = folderId, name = "Restored Folder", noteCount = 1)

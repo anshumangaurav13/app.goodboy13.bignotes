@@ -631,6 +631,8 @@ fun BigNotesMainScreen(
         val uriStr = backupFolderUriString
         if (uriStr != null) {
             val treeUri = Uri.parse(uriStr)
+            saveJob?.cancel()
+            dirtyNoteId = null
             isRestoreInProgress = true
             coroutineScope.launch(Dispatchers.IO) {
                 val result = BackupManager.restoreSnapshot(context, treeUri, snapshotId, noteStorageManager)
@@ -638,6 +640,8 @@ fun BigNotesMainScreen(
                     isRestoreInProgress = false
                     showTimelineDialog = false
                     if (result.success) {
+                        saveJob?.cancel()
+                        dirtyNoteId = null
                         folders = result.restoredFolders
                         allNotes = result.restoredNotes
                         for (note in result.restoredNotes) {
@@ -664,6 +668,8 @@ fun BigNotesMainScreen(
         val uriStr = backupFolderUriString
         if (uriStr != null) {
             val treeUri = Uri.parse(uriStr)
+            saveJob?.cancel()
+            dirtyNoteId = null
             isRestoreInProgress = true
             coroutineScope.launch(Dispatchers.IO) {
                 val result = BackupManager.cherryPickNote(context, treeUri, snapshotId, noteId, noteStorageManager)
@@ -684,6 +690,7 @@ fun BigNotesMainScreen(
                         } else {
                             listOf(restored) + allNotes
                         }
+                        noteStorageManager.saveNotesIndex(allNotes)
                         val folderCounts = allNotes.groupingBy { it.folderId }.eachCount()
                         folders = folders.map { f -> f.copy(noteCount = folderCounts[f.id] ?: 0) }
 
@@ -738,13 +745,13 @@ fun BigNotesMainScreen(
     // Background fast verification of storage
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            val savedFolders = noteStorageManager.loadFolders()
-            if (!savedFolders.isNullOrEmpty()) {
-                withContext(Dispatchers.Main) { folders = savedFolders }
-            }
             val fastNotes = noteStorageManager.loadAllNotesMetadataFast()
-            if (fastNotes.isNotEmpty()) {
-                withContext(Dispatchers.Main) {
+            val savedFolders = noteStorageManager.loadFolders()
+            withContext(Dispatchers.Main) {
+                if (!savedFolders.isNullOrEmpty()) {
+                    folders = savedFolders
+                }
+                if (fastNotes.isNotEmpty()) {
                     allNotes = fastNotes
                     folders = folders.map { f ->
                         f.copy(noteCount = fastNotes.count { it.folderId == f.id })
