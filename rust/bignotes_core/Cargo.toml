@@ -1,0 +1,20 @@
+[package]
+name = "bignotes_core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Antigravity <scien@bignotes.com>"]
+description = "High-performance native computational geometry & tessellation core for BigNotes"
+
+[lib]
+name = "bignotes_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jni = { version = "0.21", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

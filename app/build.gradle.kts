@@ -11,11 +11,11 @@ plugins {
 }
 
 android {
-    namespace = "com.antigrav.bignotes"
+    namespace = "app.goodboy13.bignotes"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.antigrav.bignotes"
+        applicationId = "app.goodboy13.bignotes"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -83,6 +83,19 @@ dependencies {
     testImplementation("org.json:json:20240303")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+tasks.register<Exec>("buildRustCore") {
+    group = "build"
+    description = "Builds the native Rust bignotes_core cdylib for Android using cargo-ndk."
+    workingDir = File(rootDir, "rust/bignotes_core")
+    commandLine(
+        "cargo", "ndk",
+        "-t", "arm64-v8a",
+        "-t", "x86_64",
+        "-o", file("src/main/jniLibs").absolutePath,
+        "build", "--release"
+    )
 }
 
 tasks.register("archiveDebugApk") {
