@@ -4,8 +4,7 @@
 
 # BigNotes
 
-A fast, smooth, infinite canvas note-taking app designed for Android tablets and phones.
-
+A fast, smooth, infinite canvas note-taking app designed for Android tablets.
 ---
 
 ### Download
