@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.BorderStroke
 import app.goodboy13.bignotes.core.model.BezierControlPoints
+import app.goodboy13.bignotes.core.model.HoverCursorOrientation
 import app.goodboy13.bignotes.core.model.GridConfig
 import app.goodboy13.bignotes.core.model.GridStyle
 import app.goodboy13.bignotes.core.model.PaperColor
@@ -117,6 +118,10 @@ fun SettingsDialog(
     onHoldToEraseEnabledChange: (Boolean) -> Unit = {},
     holdToEraseDelayMs: Long = 350L,
     onHoldToEraseDelayMsChange: (Long) -> Unit = {},
+    hoverCursorEnabled: Boolean = true,
+    onHoverCursorEnabledChange: (Boolean) -> Unit = {},
+    hoverCursorOrientation: HoverCursorOrientation = HoverCursorOrientation.UP_RIGHT,
+    onHoverCursorOrientationChange: (HoverCursorOrientation) -> Unit = {},
     backupFolderDisplayName: String = "",
     isBackupFolderConfigured: Boolean = false,
     onSelectBackupFolder: () -> Unit = {},
@@ -336,6 +341,10 @@ fun SettingsDialog(
                                     onHoldToEraseEnabledChange = onHoldToEraseEnabledChange,
                                     holdToEraseDelayMs = holdToEraseDelayMs,
                                     onHoldToEraseDelayMsChange = onHoldToEraseDelayMsChange,
+                                    hoverCursorEnabled = hoverCursorEnabled,
+                                    onHoverCursorEnabledChange = onHoverCursorEnabledChange,
+                                    hoverCursorOrientation = hoverCursorOrientation,
+                                    onHoverCursorOrientationChange = onHoverCursorOrientationChange,
                                     pressureBezier = pressureBezier,
                                     onPressureBezierChange = onPressureBezierChange,
                                     velocityBezier = velocityBezier,
@@ -434,6 +443,10 @@ private fun PenStylusDetail(
     onHoldToEraseEnabledChange: (Boolean) -> Unit,
     holdToEraseDelayMs: Long,
     onHoldToEraseDelayMsChange: (Long) -> Unit,
+    hoverCursorEnabled: Boolean,
+    onHoverCursorEnabledChange: (Boolean) -> Unit,
+    hoverCursorOrientation: HoverCursorOrientation,
+    onHoverCursorOrientationChange: (HoverCursorOrientation) -> Unit,
     pressureBezier: BezierControlPoints,
     onPressureBezierChange: (BezierControlPoints) -> Unit,
     velocityBezier: BezierControlPoints,
@@ -560,6 +573,79 @@ private fun PenStylusDetail(
                 steps = 15,
                 modifier = Modifier.fillMaxWidth().height(24.dp)
             )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    SectionHeader("HOVER TOOL CURSOR")
+    SettingsCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Hover Tool Cursor", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                Text(
+                    text = "Display stylized tool logo pointing at stylus tip when hovering over canvas",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+            Switch(
+                checked = hoverCursorEnabled,
+                onCheckedChange = onHoverCursorEnabledChange,
+                modifier = Modifier.scale(0.8f)
+            )
+        }
+
+        if (hoverCursorEnabled) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Diagonal Orientation",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                HoverCursorOrientation.entries.forEach { orientation ->
+                    val isSelected = hoverCursorOrientation == orientation
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onHoverCursorOrientationChange(orientation) }
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
+                        ) {
+                            Text(
+                                text = orientation.arrow,
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = orientation.label,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 

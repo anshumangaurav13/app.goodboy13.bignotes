@@ -55,6 +55,7 @@ import app.goodboy13.bignotes.core.model.ActiveTool
 import app.goodboy13.bignotes.core.model.PaperColor
 import app.goodboy13.bignotes.core.model.PencilTone
 import app.goodboy13.bignotes.core.model.BezierControlPoints
+import app.goodboy13.bignotes.core.model.HoverCursorOrientation
 import app.goodboy13.bignotes.core.model.PressureCurveDefaults
 import app.goodboy13.bignotes.core.model.PressureCurveType
 import app.goodboy13.bignotes.core.model.VelocityCurveDefaults
@@ -253,6 +254,14 @@ fun BigNotesMainScreen(
     }
     var holdToEraseDelayMs by remember {
         mutableLongStateOf(prefs.getLong("hold_to_erase_delay_ms", 350L))
+    }
+    var hoverCursorEnabled by remember {
+        mutableStateOf(prefs.getBoolean("hover_cursor_enabled", true))
+    }
+    var hoverCursorOrientation by remember {
+        mutableStateOf(
+            HoverCursorOrientation.fromString(prefs.getString("hover_cursor_orientation", "UP_RIGHT"))
+        )
     }
     var backupFolderUriString by remember { mutableStateOf(prefs.getString("backup_folder_uri", null)) }
 
@@ -895,6 +904,8 @@ fun BigNotesMainScreen(
             eraserRadius = eraserRadius,
             holdToEraseEnabled = holdToEraseEnabled,
             holdToEraseDelayMs = holdToEraseDelayMs,
+            hoverCursorEnabled = hoverCursorEnabled,
+            hoverCursorOrientation = hoverCursorOrientation,
             basePageWidth = CANONICAL_PAGE_WIDTH,
             viewOffsetX = animatedSidebarWidthPx,
             viewOffsetY = animatedTopOffsetPx,
@@ -1455,6 +1466,16 @@ fun BigNotesMainScreen(
                 holdToEraseDelayMs = delay
                 canvasView?.holdToEraseDelayMs = delay
                 prefs.edit().putLong("hold_to_erase_delay_ms", delay).apply()
+            },
+            hoverCursorEnabled = hoverCursorEnabled,
+            onHoverCursorEnabledChange = { enabled ->
+                hoverCursorEnabled = enabled
+                prefs.edit().putBoolean("hover_cursor_enabled", enabled).apply()
+            },
+            hoverCursorOrientation = hoverCursorOrientation,
+            onHoverCursorOrientationChange = { orientation ->
+                hoverCursorOrientation = orientation
+                prefs.edit().putString("hover_cursor_orientation", orientation.name).apply()
             },
             modelDownloadStatus = modelDownloadStatus,
             onDownloadModel = { handwritingSearchManager.downloadModel() },

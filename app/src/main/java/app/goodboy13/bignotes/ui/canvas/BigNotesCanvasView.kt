@@ -51,6 +51,7 @@ import app.goodboy13.bignotes.core.model.ActiveTool
 import app.goodboy13.bignotes.core.model.PencilTone
 import app.goodboy13.bignotes.core.model.Stroke
 import app.goodboy13.bignotes.core.model.BezierControlPoints
+import app.goodboy13.bignotes.core.model.HoverCursorOrientation
 import app.goodboy13.bignotes.ui.components.CanvasVerticalScrollbar
 
 private data class ReticleState(
@@ -76,6 +77,8 @@ fun BigNotesCanvasView(
     eraserRadius: Float = 36f,
     holdToEraseEnabled: Boolean = true,
     holdToEraseDelayMs: Long = 350L,
+    hoverCursorEnabled: Boolean = true,
+    hoverCursorOrientation: HoverCursorOrientation = HoverCursorOrientation.UP_RIGHT,
     basePageWidth: Float,
     viewOffsetX: Float = 0f,
     viewOffsetY: Float = 0f,
@@ -269,17 +272,31 @@ fun BigNotesCanvasView(
         }
 
         // 1b. Live Hover Tool Logo Cursor Overlay (Tip aligned directly at target point, just like a mouse cursor)
-        if (hoverReticle.isVisible) {
+        if (hoverReticle.isVisible && hoverCursorEnabled) {
+            val isEraser = hoverReticle.isPrecisionEraser ||
+                    hoverReticle.tool == ActiveTool.PRECISION_ERASER ||
+                    hoverReticle.tool == ActiveTool.WHOLE_STROKE_ERASER
+
+            // Rotation angle: 4 diagonal orientations for all non-eraser tools, standard 45° for erasers
+            val rotationDegrees = if (isEraser) 45f else hoverCursorOrientation.degrees
+
             Canvas(modifier = Modifier.fillMaxSize()) {
                 withTransform({
                     translate(hoverReticle.screenX, hoverReticle.screenY)
-                    rotate(45f, pivot = Offset.Zero)
+                    rotate(rotationDegrees, pivot = Offset.Zero)
                 }) {
                     drawHoverToolCursor(
                         tool = hoverReticle.tool,
                         isPrecisionEraser = hoverReticle.isPrecisionEraser
                     )
                 }
+            }
+        } else if (hoverReticle.isVisible && !hoverCursorEnabled && !hoverReticle.isPrecisionEraser) {
+            // When hover logo cursor is disabled, show subtle pinpoint landing micro-dot for drawing tools
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val center = Offset(hoverReticle.screenX, hoverReticle.screenY)
+                drawCircle(color = Color.Black.copy(alpha = 0.65f), radius = 2.dp.toPx(), center = center)
+                drawCircle(color = Color.White.copy(alpha = 0.90f), radius = 1.2.dp.toPx(), center = center)
             }
         }
 
