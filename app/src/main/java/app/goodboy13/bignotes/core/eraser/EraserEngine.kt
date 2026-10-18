@@ -91,6 +91,7 @@ object EraserEngine {
             return if ((dx * dx + dy * dy) <= radSq) emptyList() else listOf(stroke)
         }
 
+        var hasIntersected = false
         val subStrokes = mutableListOf<Stroke>()
         var currentCluster = mutableListOf<StrokePoint>()
 
@@ -100,6 +101,8 @@ object EraserEngine {
         val firstDy = firstPt.y - cy
         if ((firstDx * firstDx + firstDy * firstDy) > radSq) {
             currentCluster.add(firstPt)
+        } else {
+            hasIntersected = true
         }
 
         for (i in 0 until pts.size - 1) {
@@ -117,6 +120,10 @@ object EraserEngine {
             val f2x = p2.x - cx
             val f2y = p2.y - cy
             val p2Inside = (f2x * f2x + f2y * f2y) <= radSq
+
+            if (p1Inside || p2Inside) {
+                hasIntersected = true
+            }
 
             if (a < 1e-8f) {
                 // Degenerate segment (coincident points)
@@ -148,13 +155,14 @@ object EraserEngine {
                         addPointDeduplicated(currentCluster, p2)
                     }
                 } else {
+                    hasIntersected = true
                     // Segment enters and/or exits the circle
                     if (t1 in 0.0f..1.0f && !p1Inside) {
                         // Segment enters the circle at t1
                         val entryPt = interpolate(p1, p2, t1)
                         addPointDeduplicated(currentCluster, entryPt)
 
-                        if (currentCluster.size >= 2) {
+                        if (currentCluster.isNotEmpty()) {
                             subStrokes.add(
                                 stroke.copy(
                                     id = UUID.randomUUID().toString(),
@@ -175,13 +183,17 @@ object EraserEngine {
             }
         }
 
-        if (currentCluster.size >= 2) {
+        if (currentCluster.isNotEmpty()) {
             subStrokes.add(
                 stroke.copy(
                     id = UUID.randomUUID().toString(),
                     points = currentCluster.toList()
                 )
             )
+        }
+
+        if (!hasIntersected) {
+            return listOf(stroke)
         }
 
         return subStrokes
