@@ -33,7 +33,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -265,75 +268,17 @@ fun BigNotesCanvasView(
             }
         }
 
-        // 1b. Live Hover Tool Badge & Micro-Dot Overlay
+        // 1b. Live Hover Tool Logo Cursor Overlay (Tip aligned directly at target point, just like a mouse cursor)
         if (hoverReticle.isVisible) {
-            val density = LocalDensity.current
-
-            // Pinpoint landing micro-dot at exact stylus coordinates for non-precision eraser tools
-            if (!hoverReticle.isPrecisionEraser) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val center = Offset(hoverReticle.screenX, hoverReticle.screenY)
-                    drawCircle(
-                        color = Color.Black.copy(alpha = 0.65f),
-                        radius = 2.5.dp.toPx(),
-                        center = center
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                withTransform({
+                    translate(hoverReticle.screenX, hoverReticle.screenY)
+                    rotate(45f, pivot = Offset.Zero)
+                }) {
+                    drawHoverToolCursor(
+                        tool = hoverReticle.tool,
+                        isPrecisionEraser = hoverReticle.isPrecisionEraser
                     )
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.90f),
-                        radius = 1.5.dp.toPx(),
-                        center = center
-                    )
-                }
-            }
-
-            val badgeOffsetX = if (hoverReticle.isPrecisionEraser) {
-                with(density) { (hoverReticle.radius * 0.707f + 6.dp.toPx()).coerceAtLeast(16.dp.toPx()) }
-            } else {
-                with(density) { 14.dp.toPx() }
-            }
-            val badgeOffsetY = if (hoverReticle.isPrecisionEraser) {
-                with(density) { (-hoverReticle.radius * 0.707f - 18.dp.toPx()).coerceAtMost(-28.dp.toPx()) }
-            } else {
-                with(density) { -28.dp.toPx() }
-            }
-
-            val toolIcon = when (hoverReticle.tool) {
-                ActiveTool.FOUNTAIN_PEN -> CustomIcons.FountainPen
-                ActiveTool.PENCIL -> CustomIcons.Pencil
-                ActiveTool.HIGHLIGHTER -> CustomIcons.Highlighter
-                ActiveTool.LASSO -> Icons.Default.Gesture
-                ActiveTool.WHOLE_STROKE_ERASER -> Icons.Default.DeleteSweep
-                ActiveTool.PRECISION_ERASER -> Icons.Default.AutoFixNormal
-                else -> CustomIcons.FountainPen
-            }
-
-            Box(modifier = Modifier.fillMaxSize()) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                    tonalElevation = 6.dp,
-                    shadowElevation = 4.dp,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
-                    modifier = Modifier
-                        .offset {
-                            IntOffset(
-                                (hoverReticle.screenX + badgeOffsetX).roundToInt(),
-                                (hoverReticle.screenY + badgeOffsetY).roundToInt()
-                            )
-                        }
-                        .size(26.dp)
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        Icon(
-                            imageVector = toolIcon,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
                 }
             }
         }
@@ -769,4 +714,344 @@ fun BigNotesCanvasView(
             }
         }
     }
+}
+
+/**
+ * Draws the high-precision live stylus hover cursor, designed with the exact contact tip
+ * aligned at (0, 0) and the tool body angled up-and-to-the-right at 45 degrees, matching
+ * natural hand-held digitizer pens and desktop cursors.
+ */
+private fun DrawScope.drawHoverToolCursor(
+    tool: ActiveTool,
+    isPrecisionEraser: Boolean
+) {
+    // 1. Soft drop shadow beneath the cursor
+    val shadowOffset = 1.5.dp.toPx()
+    withTransform({
+        translate(shadowOffset, shadowOffset)
+    }) {
+        val shadowAlpha = 0.20f
+        when {
+            isPrecisionEraser || tool == ActiveTool.PRECISION_ERASER || tool == ActiveTool.WHOLE_STROKE_ERASER -> {
+                val p = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(-3.5.dp.toPx(), -4.5.dp.toPx())
+                    lineTo(-4.dp.toPx(), -23.dp.toPx())
+                    lineTo(4.dp.toPx(), -23.dp.toPx())
+                    lineTo(3.5.dp.toPx(), -4.5.dp.toPx())
+                    close()
+                }
+                drawPath(p, Color.Black.copy(alpha = shadowAlpha))
+            }
+            tool == ActiveTool.PENCIL -> {
+                val p = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(-1.2.dp.toPx(), -4.5.dp.toPx())
+                    lineTo(-3.2.dp.toPx(), -10.dp.toPx())
+                    lineTo(-3.2.dp.toPx(), -22.dp.toPx())
+                    lineTo(-3.0.dp.toPx(), -25.dp.toPx())
+                    lineTo(3.0.dp.toPx(), -25.dp.toPx())
+                    lineTo(3.2.dp.toPx(), -22.dp.toPx())
+                    lineTo(3.2.dp.toPx(), -10.dp.toPx())
+                    lineTo(1.2.dp.toPx(), -4.5.dp.toPx())
+                    close()
+                }
+                drawPath(p, Color.Black.copy(alpha = shadowAlpha))
+            }
+            tool == ActiveTool.HIGHLIGHTER -> {
+                val p = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(-4.dp.toPx(), -2.2.dp.toPx())
+                    lineTo(-3.5.dp.toPx(), -8.dp.toPx())
+                    lineTo(-4.5.dp.toPx(), -10.dp.toPx())
+                    lineTo(-4.5.dp.toPx(), -25.dp.toPx())
+                    lineTo(4.5.dp.toPx(), -25.dp.toPx())
+                    lineTo(4.5.dp.toPx(), -10.dp.toPx())
+                    lineTo(2.5.dp.toPx(), -8.dp.toPx())
+                    close()
+                }
+                drawPath(p, Color.Black.copy(alpha = shadowAlpha))
+            }
+            tool == ActiveTool.LASSO -> {
+                drawCircle(Color.Black.copy(alpha = shadowAlpha), radius = 3.dp.toPx(), center = Offset.Zero)
+            }
+            else -> {
+                val p = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(-2.2.dp.toPx(), -5.5.dp.toPx())
+                    cubicTo(-4.8.dp.toPx(), -9.dp.toPx(), -4.2.dp.toPx(), -13.5.dp.toPx(), -2.6.dp.toPx(), -16.dp.toPx())
+                    lineTo(-2.6.dp.toPx(), -25.dp.toPx())
+                    lineTo(2.6.dp.toPx(), -25.dp.toPx())
+                    lineTo(2.6.dp.toPx(), -16.dp.toPx())
+                    cubicTo(4.2.dp.toPx(), -13.5.dp.toPx(), 4.8.dp.toPx(), -9.dp.toPx(), 2.2.dp.toPx(), -5.5.dp.toPx())
+                    close()
+                }
+                drawPath(p, Color.Black.copy(alpha = shadowAlpha))
+            }
+        }
+    }
+
+    // 2. High-contrast silhouette and tool-specific detailed rendering
+    when {
+        isPrecisionEraser || tool == ActiveTool.PRECISION_ERASER || tool == ActiveTool.WHOLE_STROKE_ERASER -> {
+            val eraserOutline = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(-3.5.dp.toPx(), -4.5.dp.toPx())
+                lineTo(-4.dp.toPx(), -23.dp.toPx())
+                lineTo(4.dp.toPx(), -23.dp.toPx())
+                lineTo(3.5.dp.toPx(), -4.5.dp.toPx())
+                close()
+            }
+            // High-contrast dual outline
+            drawPath(eraserOutline, color = Color.Black.copy(alpha = 0.85f), style = DrawStroke(width = 2.4.dp.toPx(), join = StrokeJoin.Round))
+            drawPath(eraserOutline, color = Color.White.copy(alpha = 0.95f), style = DrawStroke(width = 1.2.dp.toPx(), join = StrokeJoin.Round))
+
+            // White vinyl eraser tip
+            val eraserTip = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(-3.5.dp.toPx(), -4.5.dp.toPx())
+                lineTo(-3.8.dp.toPx(), -9.dp.toPx())
+                lineTo(3.8.dp.toPx(), -9.dp.toPx())
+                lineTo(3.5.dp.toPx(), -4.5.dp.toPx())
+                close()
+            }
+            drawPath(eraserTip, color = Color(0xFFF8FAFC))
+
+            // Protective sleeve
+            val sleevePath = Path().apply {
+                moveTo(-3.8.dp.toPx(), -9.dp.toPx())
+                lineTo(-4.dp.toPx(), -23.dp.toPx())
+                lineTo(4.dp.toPx(), -23.dp.toPx())
+                lineTo(3.8.dp.toPx(), -9.dp.toPx())
+                close()
+            }
+            drawPath(sleevePath, color = Color(0xFF0284C7))
+            // Accent stripe on sleeve
+            drawLine(
+                color = Color.White,
+                start = Offset(-3.9.dp.toPx(), -13.dp.toPx()),
+                end = Offset(3.9.dp.toPx(), -13.dp.toPx()),
+                strokeWidth = 1.5.dp.toPx()
+            )
+        }
+
+        tool == ActiveTool.PENCIL -> {
+            val pencilOutline = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(-1.2.dp.toPx(), -4.5.dp.toPx())
+                lineTo(-3.2.dp.toPx(), -10.dp.toPx())
+                lineTo(-3.2.dp.toPx(), -22.dp.toPx())
+                lineTo(-3.0.dp.toPx(), -25.dp.toPx())
+                lineTo(3.0.dp.toPx(), -25.dp.toPx())
+                lineTo(3.2.dp.toPx(), -22.dp.toPx())
+                lineTo(3.2.dp.toPx(), -10.dp.toPx())
+                lineTo(1.2.dp.toPx(), -4.5.dp.toPx())
+                close()
+            }
+            drawPath(pencilOutline, color = Color.Black.copy(alpha = 0.85f), style = DrawStroke(width = 2.4.dp.toPx(), join = StrokeJoin.Round))
+            drawPath(pencilOutline, color = Color.White.copy(alpha = 0.95f), style = DrawStroke(width = 1.2.dp.toPx(), join = StrokeJoin.Round))
+
+            // Graphite lead tip
+            val leadPath = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(-1.2.dp.toPx(), -4.5.dp.toPx())
+                lineTo(1.2.dp.toPx(), -4.5.dp.toPx())
+                close()
+            }
+            drawPath(leadPath, color = Color(0xFF263238))
+
+            // Sharpened cedar wood cone
+            val woodPath = Path().apply {
+                moveTo(-1.2.dp.toPx(), -4.5.dp.toPx())
+                lineTo(-3.2.dp.toPx(), -10.dp.toPx())
+                lineTo(3.2.dp.toPx(), -10.dp.toPx())
+                lineTo(1.2.dp.toPx(), -4.5.dp.toPx())
+                close()
+            }
+            drawPath(woodPath, color = Color(0xFFF0D6A7))
+
+            // Hexagonal yellow pencil body
+            val bodyPath = Path().apply {
+                moveTo(-3.2.dp.toPx(), -10.dp.toPx())
+                lineTo(-3.2.dp.toPx(), -20.dp.toPx())
+                lineTo(3.2.dp.toPx(), -20.dp.toPx())
+                lineTo(3.2.dp.toPx(), -10.dp.toPx())
+                close()
+            }
+            drawPath(bodyPath, color = Color(0xFFFFB300))
+            drawLine(
+                color = Color(0xFFFFE082),
+                start = Offset(0f, -10.dp.toPx()),
+                end = Offset(0f, -20.dp.toPx()),
+                strokeWidth = 2.dp.toPx()
+            )
+
+            // Metal ferrule
+            val ferrulePath = Path().apply {
+                moveTo(-3.2.dp.toPx(), -20.dp.toPx())
+                lineTo(-3.2.dp.toPx(), -22.5.dp.toPx())
+                lineTo(3.2.dp.toPx(), -22.5.dp.toPx())
+                lineTo(3.2.dp.toPx(), -20.dp.toPx())
+                close()
+            }
+            drawPath(ferrulePath, color = Color(0xFFCFD8DC))
+
+            // Pink eraser dome
+            val eraserDome = Path().apply {
+                moveTo(-3.0.dp.toPx(), -22.5.dp.toPx())
+                lineTo(-2.8.dp.toPx(), -25.dp.toPx())
+                lineTo(2.8.dp.toPx(), -25.dp.toPx())
+                lineTo(3.0.dp.toPx(), -22.5.dp.toPx())
+                close()
+            }
+            drawPath(eraserDome, color = Color(0xFFF48FB1))
+        }
+
+        tool == ActiveTool.HIGHLIGHTER -> {
+            val chiselOutline = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(-4.dp.toPx(), -2.2.dp.toPx())
+                lineTo(-3.5.dp.toPx(), -8.dp.toPx())
+                lineTo(-4.5.dp.toPx(), -10.dp.toPx())
+                lineTo(-4.5.dp.toPx(), -25.dp.toPx())
+                lineTo(4.5.dp.toPx(), -25.dp.toPx())
+                lineTo(4.5.dp.toPx(), -10.dp.toPx())
+                lineTo(2.5.dp.toPx(), -8.dp.toPx())
+                close()
+            }
+            drawPath(chiselOutline, color = Color.Black.copy(alpha = 0.85f), style = DrawStroke(width = 2.4.dp.toPx(), join = StrokeJoin.Round))
+            drawPath(chiselOutline, color = Color.White.copy(alpha = 0.95f), style = DrawStroke(width = 1.2.dp.toPx(), join = StrokeJoin.Round))
+
+            // Chisel felt nib
+            val chiselNib = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(-4.dp.toPx(), -2.2.dp.toPx())
+                lineTo(-3.5.dp.toPx(), -8.dp.toPx())
+                lineTo(2.5.dp.toPx(), -8.dp.toPx())
+                close()
+            }
+            drawPath(chiselNib, color = Color(0xFFEEFF41))
+
+            // Collar
+            val collarPath = Path().apply {
+                moveTo(-3.5.dp.toPx(), -8.dp.toPx())
+                lineTo(-4.5.dp.toPx(), -11.dp.toPx())
+                lineTo(4.5.dp.toPx(), -11.dp.toPx())
+                lineTo(2.5.dp.toPx(), -8.dp.toPx())
+                close()
+            }
+            drawPath(collarPath, color = Color(0xFF212121))
+
+            // Wide marker barrel
+            val barrelPath = Path().apply {
+                moveTo(-4.5.dp.toPx(), -11.dp.toPx())
+                lineTo(-4.5.dp.toPx(), -25.dp.toPx())
+                lineTo(4.5.dp.toPx(), -25.dp.toPx())
+                lineTo(4.5.dp.toPx(), -11.dp.toPx())
+                close()
+            }
+            drawPath(barrelPath, color = Color(0xFFF5F5F5))
+            drawLine(
+                color = Color(0xFFEEFF41),
+                start = Offset(0f, -12.dp.toPx()),
+                end = Offset(0f, -24.dp.toPx()),
+                strokeWidth = 3.dp.toPx()
+            )
+        }
+
+        tool == ActiveTool.LASSO -> {
+            val lassoLoop = Path().apply {
+                moveTo(0f, 0f)
+                cubicTo(
+                    -5.dp.toPx(), -8.dp.toPx(),
+                    -7.dp.toPx(), -18.dp.toPx(),
+                    0f, -22.dp.toPx()
+                )
+                cubicTo(
+                    7.dp.toPx(), -18.dp.toPx(),
+                    5.dp.toPx(), -8.dp.toPx(),
+                    0f, 0f
+                )
+            }
+            drawPath(
+                lassoLoop,
+                color = Color.Black.copy(alpha = 0.85f),
+                style = DrawStroke(width = 2.4.dp.toPx(), join = StrokeJoin.Round)
+            )
+            drawPath(
+                lassoLoop,
+                color = Color(0xFF0284C7),
+                style = DrawStroke(
+                    width = 1.3.dp.toPx(),
+                    join = StrokeJoin.Round,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))
+                )
+            )
+            // Knot dot at contact point
+            drawCircle(Color.Black.copy(alpha = 0.85f), radius = 2.4.dp.toPx(), center = Offset.Zero)
+            drawCircle(Color.White, radius = 1.2.dp.toPx(), center = Offset.Zero)
+        }
+
+        else -> {
+            // FOUNTAIN_PEN (and default)
+            val nibOutline = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(-2.2.dp.toPx(), -5.5.dp.toPx())
+                cubicTo(-4.8.dp.toPx(), -9.dp.toPx(), -4.2.dp.toPx(), -13.5.dp.toPx(), -2.6.dp.toPx(), -16.dp.toPx())
+                lineTo(-2.6.dp.toPx(), -25.dp.toPx())
+                lineTo(2.6.dp.toPx(), -25.dp.toPx())
+                lineTo(2.6.dp.toPx(), -16.dp.toPx())
+                cubicTo(4.2.dp.toPx(), -13.5.dp.toPx(), 4.8.dp.toPx(), -9.dp.toPx(), 2.2.dp.toPx(), -5.5.dp.toPx())
+                close()
+            }
+            drawPath(nibOutline, color = Color.Black.copy(alpha = 0.85f), style = DrawStroke(width = 2.4.dp.toPx(), join = StrokeJoin.Round))
+            drawPath(nibOutline, color = Color.White.copy(alpha = 0.95f), style = DrawStroke(width = 1.2.dp.toPx(), join = StrokeJoin.Round))
+
+            // Nib blade
+            val bladePath = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(-2.2.dp.toPx(), -5.5.dp.toPx())
+                cubicTo(-4.8.dp.toPx(), -9.dp.toPx(), -4.2.dp.toPx(), -13.5.dp.toPx(), -2.6.dp.toPx(), -16.dp.toPx())
+                lineTo(2.6.dp.toPx(), -16.dp.toPx())
+                cubicTo(4.2.dp.toPx(), -13.5.dp.toPx(), 4.8.dp.toPx(), -9.dp.toPx(), 2.2.dp.toPx(), -5.5.dp.toPx())
+                close()
+            }
+            drawPath(bladePath, color = Color(0xFFECEFF1))
+
+            // Grip section
+            val gripPath = Path().apply {
+                moveTo(-2.6.dp.toPx(), -16.dp.toPx())
+                lineTo(-2.6.dp.toPx(), -25.dp.toPx())
+                lineTo(2.6.dp.toPx(), -25.dp.toPx())
+                lineTo(2.6.dp.toPx(), -16.dp.toPx())
+                close()
+            }
+            drawPath(gripPath, color = Color(0xFF263238))
+
+            // Gold collar band
+            drawLine(
+                color = Color(0xFFFFD54F),
+                start = Offset(-2.6.dp.toPx(), -16.dp.toPx()),
+                end = Offset(2.6.dp.toPx(), -16.dp.toPx()),
+                strokeWidth = 1.8.dp.toPx()
+            )
+
+            // Central slit and breather hole
+            drawLine(
+                color = Color(0xFF37474F),
+                start = Offset(0f, 0f),
+                end = Offset(0f, -8.dp.toPx()),
+                strokeWidth = 0.9.dp.toPx()
+            )
+            drawCircle(
+                color = Color(0xFF37474F),
+                radius = 1.1.dp.toPx(),
+                center = Offset(0f, -8.5.dp.toPx())
+            )
+        }
+    }
+
+    // 3. Pinpoint microdot at the exact tip coordinate (0, 0)
+    drawCircle(color = Color.Black.copy(alpha = 0.75f), radius = 1.8.dp.toPx(), center = Offset.Zero)
+    drawCircle(color = Color.White.copy(alpha = 0.95f), radius = 1.0.dp.toPx(), center = Offset.Zero)
 }
