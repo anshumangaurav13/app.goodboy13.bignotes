@@ -8,6 +8,7 @@ import android.os.Looper
 import android.util.AttributeSet
 import android.view.Choreographer
 import android.view.HapticFeedbackConstants
+import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.SurfaceView
 import android.view.VelocityTracker
@@ -118,6 +119,7 @@ class SketchCanvasView @JvmOverloads constructor(
                 }
                 if (value != ActiveTool.PRECISION_ERASER && value != ActiveTool.WHOLE_STROKE_ERASER) {
                     onEraserReticleChanged?.invoke(0f, 0f, 0f, EraserMode.PRECISION, false)
+                    onHoverReticleChanged?.invoke(0f, 0f, 0f, value, false, false)
                 }
             }
         }
@@ -131,6 +133,13 @@ class SketchCanvasView @JvmOverloads constructor(
     var multiFingerGesturesEnabled: Boolean = true
     var shapeSnappingEnabled: Boolean = true
     var shapeSnapDelayMs: Long = 400L
+
+    var holdToEraseEnabled: Boolean = true
+    var holdToEraseDelayMs: Long = 350L
+    var isHoldToEraseActive: Boolean = false
+        private set
+
+    var onHoverReticleChanged: ((screenX: Float, screenY: Float, radius: Float, tool: ActiveTool, isPrecisionEraser: Boolean, isVisible: Boolean) -> Unit)? = null
 
     var gridConfig: GridConfig
         get() = renderer.gridConfig
@@ -351,6 +360,40 @@ class SketchCanvasView @JvmOverloads constructor(
         }
         shapeSnapRunnable = r
         shapeSnapHandler.postDelayed(r, shapeSnapDelayMs)
+    }
+
+    // Hold-to-Erase timer & anchor state
+    private val holdToEraseHandler = Handler(Looper.getMainLooper())
+    private var holdToEraseRunnable: Runnable? = null
+    private var holdToEraseAnchorSx: Float = 0f
+    private var holdToEraseAnchorSy: Float = 0f
+
+    private fun scheduleHoldToEraseTimer(initWx: Float, initWy: Float, initSx: Float, initSy: Float) {
+        cancelHoldToEraseTimer()
+        holdToEraseAnchorSx = initSx
+        holdToEraseAnchorSy = initSy
+        val r = Runnable {
+            if (!isHoldToEraseActive && !isHoldingSnappedShape && activeStrokePoints.size < 8) {
+                isHoldToEraseActive = true
+                shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
+                shapeSnapRunnable = null
+                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                activeStrokePoints.clear()
+                liveDabGenerator = null
+                frontBufferedRenderer?.renderFrontBufferedLayer(
+                    FrontBufferPacket(dabs = emptyList(), clearBeforeDraw = true)
+                )
+                startEraserSession(initSx, initSy, initWx, initWy, EraserMode.PRECISION)
+                onEraserReticleChanged?.invoke(initSx, initSy, eraserRadius, EraserMode.PRECISION, true)
+            }
+        }
+        holdToEraseRunnable = r
+        holdToEraseHandler.postDelayed(r, holdToEraseDelayMs)
+    }
+
+    private fun cancelHoldToEraseTimer() {
+        holdToEraseRunnable?.let { holdToEraseHandler.removeCallbacks(it) }
+        holdToEraseRunnable = null
     }
 
 
@@ -836,10 +879,12 @@ class SketchCanvasView @JvmOverloads constructor(
             val isHardwareEraser = toolType == MotionEvent.TOOL_TYPE_ERASER
 
             val isErasing = isHardwareEraser || isBarrelButtonPressed ||
+                    isHoldToEraseActive ||
                     activeTool == ActiveTool.PRECISION_ERASER ||
                     activeTool == ActiveTool.WHOLE_STROKE_ERASER
 
             val effectiveEraserMode = when {
+                isHoldToEraseActive -> EraserMode.PRECISION
                 activeTool == ActiveTool.WHOLE_STROKE_ERASER -> EraserMode.WHOLE_STROKE
                 else -> eraserMode
             }
@@ -972,9 +1017,14 @@ class SketchCanvasView @JvmOverloads constructor(
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                     parent?.requestDisallowInterceptTouchEvent(true)
                     if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionIndex == stylusPointerIndex) {
+                        cancelHoldToEraseTimer()
+                        onHoverReticleChanged?.invoke(0f, 0f, 0f, activeTool, false, false)
                         if (isErasing) {
                             startEraserSession(sx, sy, wx, wy, effectiveEraserMode)
                         } else {
+                            if (holdToEraseEnabled) {
+                                scheduleHoldToEraseTimer(wx, wy, sx, sy)
+                            }
                             val timeNanos = getEventTimeNanos(event)
                             startStylusStroke(wx, wy, sx, sy, effPressure, event.eventTime, timeNanos)
                         }
@@ -983,6 +1033,16 @@ class SketchCanvasView @JvmOverloads constructor(
                 }
 
                 MotionEvent.ACTION_MOVE -> {
+                    if (isHoldToEraseActive) {
+                        performEraserMove(sx, sy, wx, wy, EraserMode.PRECISION)
+                        return true
+                    }
+                    if (holdToEraseRunnable != null) {
+                        val dist = kotlin.math.hypot((sx - holdToEraseAnchorSx).toDouble(), (sy - holdToEraseAnchorSy).toDouble())
+                        if (dist > 14.0) {
+                            cancelHoldToEraseTimer()
+                        }
+                    }
                     if (isErasing) {
                         performEraserMove(sx, sy, wx, wy, effectiveEraserMode)
                     } else {
@@ -993,8 +1053,16 @@ class SketchCanvasView @JvmOverloads constructor(
 
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                     if (event.actionMasked == MotionEvent.ACTION_UP || event.actionIndex == stylusPointerIndex) {
+                        cancelHoldToEraseTimer()
                         shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
                         shapeSnapRunnable = null
+
+                        if (isHoldToEraseActive) {
+                            finalizeEraserSession(EraserMode.PRECISION)
+                            isHoldToEraseActive = false
+                            onEraserReticleChanged?.invoke(0f, 0f, 0f, EraserMode.PRECISION, false)
+                            return true
+                        }
 
                         if (isErasing) {
                             finalizeEraserSession(effectiveEraserMode)
@@ -1036,11 +1104,16 @@ class SketchCanvasView @JvmOverloads constructor(
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
+                    cancelHoldToEraseTimer()
                     shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
                     shapeSnapRunnable = null
                     isHoldingSnappedShape = false
                     currentSnappedShape = null
-                    if (isErasing) {
+                    if (isHoldToEraseActive) {
+                        finalizeEraserSession(EraserMode.PRECISION)
+                        isHoldToEraseActive = false
+                        onEraserReticleChanged?.invoke(0f, 0f, 0f, EraserMode.PRECISION, false)
+                    } else if (isErasing) {
                         finalizeEraserSession(effectiveEraserMode)
                     } else {
                         lastPointTimeNanos = 0L
@@ -1340,16 +1413,38 @@ class SketchCanvasView @JvmOverloads constructor(
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
-        val isEraser = activeTool == ActiveTool.PRECISION_ERASER || activeTool == ActiveTool.WHOLE_STROKE_ERASER
-        if (isEraser) {
-            val effMode = if (activeTool == ActiveTool.WHOLE_STROKE_ERASER) EraserMode.WHOLE_STROKE else eraserMode
+        val toolType = if (event.pointerCount > 0) event.getToolType(0) else MotionEvent.TOOL_TYPE_UNKNOWN
+        val isStylusOrMouse = toolType == MotionEvent.TOOL_TYPE_STYLUS ||
+                toolType == MotionEvent.TOOL_TYPE_ERASER ||
+                toolType == MotionEvent.TOOL_TYPE_MOUSE ||
+                event.isFromSource(InputDevice.SOURCE_STYLUS)
+
+        if (isStylusOrMouse) {
+            val isHwEraser = toolType == MotionEvent.TOOL_TYPE_ERASER
+            val currentTool = if (isHwEraser) {
+                if (eraserMode == EraserMode.WHOLE_STROKE) ActiveTool.WHOLE_STROKE_ERASER else ActiveTool.PRECISION_ERASER
+            } else {
+                activeTool
+            }
+            val isEraser = currentTool == ActiveTool.PRECISION_ERASER || currentTool == ActiveTool.WHOLE_STROKE_ERASER
+            val isPrecision = currentTool == ActiveTool.PRECISION_ERASER
+            val effMode = if (currentTool == ActiveTool.WHOLE_STROKE_ERASER) EraserMode.WHOLE_STROKE else eraserMode
+
             when (event.actionMasked) {
                 MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_HOVER_ENTER -> {
-                    onEraserReticleChanged?.invoke(event.x, event.y, eraserRadius, effMode, true)
+                    if (isEraser && isPrecision) {
+                        onEraserReticleChanged?.invoke(event.x, event.y, eraserRadius, effMode, true)
+                    } else {
+                        onEraserReticleChanged?.invoke(0f, 0f, 0f, effMode, false)
+                    }
+                    onHoverReticleChanged?.invoke(event.x, event.y, eraserRadius, currentTool, isPrecision, true)
                     return true
                 }
                 MotionEvent.ACTION_HOVER_EXIT -> {
-                    onEraserReticleChanged?.invoke(0f, 0f, 0f, effMode, false)
+                    if (isEraser) {
+                        onEraserReticleChanged?.invoke(0f, 0f, 0f, effMode, false)
+                    }
+                    onHoverReticleChanged?.invoke(0f, 0f, 0f, currentTool, isPrecision, false)
                     return true
                 }
             }

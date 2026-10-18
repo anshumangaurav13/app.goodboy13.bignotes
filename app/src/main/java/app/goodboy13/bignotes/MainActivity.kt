@@ -248,6 +248,12 @@ fun BigNotesMainScreen(
     var shapeSnapDelayMs by remember {
         mutableLongStateOf(prefs.getLong("shape_snap_delay_ms", 400L))
     }
+    var holdToEraseEnabled by remember {
+        mutableStateOf(prefs.getBoolean("hold_to_erase_enabled", true))
+    }
+    var holdToEraseDelayMs by remember {
+        mutableLongStateOf(prefs.getLong("hold_to_erase_delay_ms", 350L))
+    }
     var backupFolderUriString by remember { mutableStateOf(prefs.getString("backup_folder_uri", null)) }
 
     var autoBackupEnabled by remember { mutableStateOf(prefs.getBoolean("auto_backup_enabled", true)) }
@@ -332,6 +338,7 @@ fun BigNotesMainScreen(
         )
     }
     var strokeSize by remember { mutableFloatStateOf(5.0f) }
+    var eraserRadius by remember { mutableFloatStateOf(prefs.getFloat("eraser_radius", 36f)) }
     var zoomScale by remember { mutableFloatStateOf(1.0f) }
     var canUndo by remember { mutableStateOf(false) }
     var canRedo by remember { mutableStateOf(false) }
@@ -885,6 +892,9 @@ fun BigNotesMainScreen(
         BigNotesCanvasView(
             activeTool = activeTool,
             strokeSize = strokeSize,
+            eraserRadius = eraserRadius,
+            holdToEraseEnabled = holdToEraseEnabled,
+            holdToEraseDelayMs = holdToEraseDelayMs,
             basePageWidth = CANONICAL_PAGE_WIDTH,
             viewOffsetX = animatedSidebarWidthPx,
             viewOffsetY = animatedTopOffsetPx,
@@ -932,6 +942,9 @@ fun BigNotesMainScreen(
                 boundView.multiFingerGesturesEnabled = multiFingerGesturesEnabled
                 boundView.shapeSnappingEnabled = shapeSnappingEnabled
                 boundView.shapeSnapDelayMs = shapeSnapDelayMs
+                boundView.holdToEraseEnabled = holdToEraseEnabled
+                boundView.holdToEraseDelayMs = holdToEraseDelayMs
+                boundView.eraserRadius = eraserRadius
                 boundView.renderer.inkBleedConfig = inkBleedConfig
 
                 boundView.renderer.worldPageHeight = app.goodboy13.bignotes.core.export.PdfPagePaginator.getWorldPageHeight(selectedPdfPageFormat)
@@ -1162,6 +1175,12 @@ fun BigNotesMainScreen(
             onStrokeSizeChange = { newSize ->
                 strokeSize = newSize
                 canvasView?.renderer?.currentBaseWidth = newSize
+            },
+            eraserRadius = eraserRadius,
+            onEraserRadiusChange = { newRadius ->
+                eraserRadius = newRadius
+                canvasView?.eraserRadius = newRadius
+                prefs.edit().putFloat("eraser_radius", newRadius).apply()
             },
             paletteColors = displayPalette,
             selectedColorIndex = currentColorIndex,
@@ -1424,6 +1443,18 @@ fun BigNotesMainScreen(
                 shapeSnapDelayMs = delay
                 canvasView?.shapeSnapDelayMs = delay
                 prefs.edit().putLong("shape_snap_delay_ms", delay).apply()
+            },
+            holdToEraseEnabled = holdToEraseEnabled,
+            onHoldToEraseEnabledChange = { enabled ->
+                holdToEraseEnabled = enabled
+                canvasView?.holdToEraseEnabled = enabled
+                prefs.edit().putBoolean("hold_to_erase_enabled", enabled).apply()
+            },
+            holdToEraseDelayMs = holdToEraseDelayMs,
+            onHoldToEraseDelayMsChange = { delay ->
+                holdToEraseDelayMs = delay
+                canvasView?.holdToEraseDelayMs = delay
+                prefs.edit().putLong("hold_to_erase_delay_ms", delay).apply()
             },
             modelDownloadStatus = modelDownloadStatus,
             onDownloadModel = { handwritingSearchManager.downloadModel() },

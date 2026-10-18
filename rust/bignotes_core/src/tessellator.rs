@@ -5,6 +5,7 @@ pub const FLOATS_PER_VERTEX: usize = 10;
 pub const VERTICES_PER_DAB: usize = 6;
 pub const FLOATS_PER_DAB: usize = VERTICES_PER_DAB * FLOATS_PER_VERTEX;
 
+#[allow(dead_code)]
 #[inline(always)]
 fn put_vertex(
     out: &mut [f32],
@@ -30,6 +31,42 @@ fn put_vertex(
     out[offset + 7] = b;
     out[offset + 8] = a;
     out[offset + 9] = tone;
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn emit_dab_quad_neon(
+    out_ptr: *mut f32,
+    x: f32,
+    y: f32,
+    radius: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+    alpha: f32,
+    tone: f32,
+) {
+    use std::arch::aarch64::*;
+
+    let attr_rad_rgb = vld1q_f32([radius, r, g, b].as_ptr());
+    let attr_alpha_tone = vld1_f32([alpha, tone].as_ptr());
+
+    const NORMALS: [(f32, f32); 6] = [
+        (-1.0, -1.0),
+        (1.0, -1.0),
+        (1.0, 1.0),
+        (-1.0, -1.0),
+        (1.0, 1.0),
+        (-1.0, 1.0),
+    ];
+
+    for (i, &(nx, ny)) in NORMALS.iter().enumerate() {
+        let v_ptr = out_ptr.add(i * FLOATS_PER_VERTEX);
+        let xy_nx_ny = vld1q_f32([x, y, nx, ny].as_ptr());
+        vst1q_f32(v_ptr, xy_nx_ny);
+        vst1q_f32(v_ptr.add(4), attr_rad_rgb);
+        vst1_f32(v_ptr.add(8), attr_alpha_tone);
+    }
 }
 
 #[inline]
@@ -169,14 +206,22 @@ pub fn tessellate_stroke(
             (radius, alpha, tone_id)
         };
 
-        // 6 vertices per dab (2 triangles forming quad)
-        put_vertex(&mut out, offset, pt.x, pt.y, -1.0, -1.0, radius, r, g, b, alpha, dab_tone_id);
-        put_vertex(&mut out, offset + 10, pt.x, pt.y, 1.0, -1.0, radius, r, g, b, alpha, dab_tone_id);
-        put_vertex(&mut out, offset + 20, pt.x, pt.y, 1.0, 1.0, radius, r, g, b, alpha, dab_tone_id);
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            emit_dab_quad_neon(out.as_mut_ptr().add(offset), pt.x, pt.y, radius, r, g, b, alpha, dab_tone_id);
+        }
 
-        put_vertex(&mut out, offset + 30, pt.x, pt.y, -1.0, -1.0, radius, r, g, b, alpha, dab_tone_id);
-        put_vertex(&mut out, offset + 40, pt.x, pt.y, 1.0, 1.0, radius, r, g, b, alpha, dab_tone_id);
-        put_vertex(&mut out, offset + 50, pt.x, pt.y, -1.0, 1.0, radius, r, g, b, alpha, dab_tone_id);
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            // 6 vertices per dab (2 triangles forming quad)
+            put_vertex(&mut out, offset, pt.x, pt.y, -1.0, -1.0, radius, r, g, b, alpha, dab_tone_id);
+            put_vertex(&mut out, offset + 10, pt.x, pt.y, 1.0, -1.0, radius, r, g, b, alpha, dab_tone_id);
+            put_vertex(&mut out, offset + 20, pt.x, pt.y, 1.0, 1.0, radius, r, g, b, alpha, dab_tone_id);
+
+            put_vertex(&mut out, offset + 30, pt.x, pt.y, -1.0, -1.0, radius, r, g, b, alpha, dab_tone_id);
+            put_vertex(&mut out, offset + 40, pt.x, pt.y, 1.0, 1.0, radius, r, g, b, alpha, dab_tone_id);
+            put_vertex(&mut out, offset + 50, pt.x, pt.y, -1.0, 1.0, radius, r, g, b, alpha, dab_tone_id);
+        }
 
         offset += FLOATS_PER_DAB;
     }

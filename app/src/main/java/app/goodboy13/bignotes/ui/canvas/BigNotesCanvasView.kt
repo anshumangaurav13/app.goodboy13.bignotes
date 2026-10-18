@@ -7,16 +7,23 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
+import androidx.compose.material.icons.filled.AutoFixNormal
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FolderOff
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.*
+import app.goodboy13.bignotes.ui.theme.CustomIcons
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import app.goodboy13.bignotes.core.math.model.MathOverlayState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,10 +57,22 @@ private data class ReticleState(
     val isVisible: Boolean = false
 )
 
+private data class HoverReticleState(
+    val screenX: Float = 0f,
+    val screenY: Float = 0f,
+    val radius: Float = 0f,
+    val tool: ActiveTool = ActiveTool.FOUNTAIN_PEN,
+    val isPrecisionEraser: Boolean = false,
+    val isVisible: Boolean = false
+)
+
 @Composable
 fun BigNotesCanvasView(
     activeTool: ActiveTool,
     strokeSize: Float,
+    eraserRadius: Float = 36f,
+    holdToEraseEnabled: Boolean = true,
+    holdToEraseDelayMs: Long = 350L,
     basePageWidth: Float,
     viewOffsetX: Float = 0f,
     viewOffsetY: Float = 0f,
@@ -86,6 +105,7 @@ fun BigNotesCanvasView(
     modifier: Modifier = Modifier
 ) {
     var reticle by remember { mutableStateOf(ReticleState()) }
+    var hoverReticle by remember { mutableStateOf(HoverReticleState()) }
     var canvasViewRef by remember { mutableStateOf<SketchCanvasView?>(null) }
     var lassoPoints by remember { mutableStateOf<List<PointF>>(emptyList()) }
     var selectedStrokes by remember { mutableStateOf<List<Stroke>>(emptyList()) }
@@ -129,7 +149,9 @@ fun BigNotesCanvasView(
                     this.showPageSeparators = showPageSeparators
                     this.inkBleedConfig = inkBleedConfig
                     this.worldPageHeight = worldPageHeight
-                    eraserRadius = (strokeSize * 4.5f).coerceIn(16f, 90f)
+                    this.eraserRadius = eraserRadius
+                    this.holdToEraseEnabled = holdToEraseEnabled
+                    this.holdToEraseDelayMs = holdToEraseDelayMs
 
                     this.onUndoRedoStateChanged = onUndoRedoStateChanged
                     this.onViewportChanged = { zoom, _, _, _ ->
@@ -143,6 +165,9 @@ fun BigNotesCanvasView(
                     this.onPenContactChanged = onPenContactChanged
                     this.onEraserReticleChanged = { sx, sy, radius, _, isVisible ->
                         reticle = ReticleState(sx, sy, radius, isVisible)
+                    }
+                    this.onHoverReticleChanged = { sx, sy, radius, tool, isPrecision, isVisible ->
+                        hoverReticle = HoverReticleState(sx, sy, radius, tool, isPrecision, isVisible)
                     }
                     this.onLassoPathChanged = { pts ->
                         lassoPoints = pts
@@ -181,7 +206,9 @@ fun BigNotesCanvasView(
                 view.velocityThinning = velocityThinning
                 view.onStrokeStarted = onStrokeStarted
                 view.renderer.currentBaseWidth = strokeSize
-                view.eraserRadius = (strokeSize * 4.5f).coerceIn(16f, 90f)
+                view.eraserRadius = eraserRadius
+                view.holdToEraseEnabled = holdToEraseEnabled
+                view.holdToEraseDelayMs = holdToEraseDelayMs
                 if (basePageWidth > 50f && view.renderer.basePageWidth != basePageWidth) {
                     view.renderer.basePageWidth = basePageWidth
                     view.requestRedraw()
@@ -235,6 +262,79 @@ fun BigNotesCanvasView(
                     radius = 1.dp.toPx(),
                     center = centerOffset
                 )
+            }
+        }
+
+        // 1b. Live Hover Tool Badge & Micro-Dot Overlay
+        if (hoverReticle.isVisible) {
+            val density = LocalDensity.current
+
+            // Pinpoint landing micro-dot at exact stylus coordinates for non-precision eraser tools
+            if (!hoverReticle.isPrecisionEraser) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val center = Offset(hoverReticle.screenX, hoverReticle.screenY)
+                    drawCircle(
+                        color = Color.Black.copy(alpha = 0.65f),
+                        radius = 2.5.dp.toPx(),
+                        center = center
+                    )
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.90f),
+                        radius = 1.5.dp.toPx(),
+                        center = center
+                    )
+                }
+            }
+
+            val badgeOffsetX = if (hoverReticle.isPrecisionEraser) {
+                with(density) { (hoverReticle.radius * 0.707f + 6.dp.toPx()).coerceAtLeast(16.dp.toPx()) }
+            } else {
+                with(density) { 14.dp.toPx() }
+            }
+            val badgeOffsetY = if (hoverReticle.isPrecisionEraser) {
+                with(density) { (-hoverReticle.radius * 0.707f - 18.dp.toPx()).coerceAtMost(-28.dp.toPx()) }
+            } else {
+                with(density) { -28.dp.toPx() }
+            }
+
+            val toolIcon = when (hoverReticle.tool) {
+                ActiveTool.FOUNTAIN_PEN -> CustomIcons.FountainPen
+                ActiveTool.PENCIL -> CustomIcons.Pencil
+                ActiveTool.HIGHLIGHTER -> CustomIcons.Highlighter
+                ActiveTool.LASSO -> Icons.Default.Gesture
+                ActiveTool.WHOLE_STROKE_ERASER -> Icons.Default.DeleteSweep
+                ActiveTool.PRECISION_ERASER -> Icons.Default.AutoFixNormal
+                else -> CustomIcons.FountainPen
+            }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                    tonalElevation = 6.dp,
+                    shadowElevation = 4.dp,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (hoverReticle.screenX + badgeOffsetX).roundToInt(),
+                                (hoverReticle.screenY + badgeOffsetY).roundToInt()
+                            )
+                        }
+                        .size(26.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Icon(
+                            imageVector = toolIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
             }
         }
 

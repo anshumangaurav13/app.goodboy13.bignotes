@@ -31,12 +31,15 @@ import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
+private val FLYOUT_STROKE_SIZES = listOf(2f, 3f, 5f, 7f, 9f, 17f)
+val ERASER_SIZES = listOf(16f, 24f, 36f, 48f, 64f, 80f)
+
 /**
- * Dual-Arc Radial Satellite Flyout for Inking Colors & Stroke Sizes.
+ * Dual-Arc Radial Satellite Flyout for Inking Colors & Stroke Sizes (or Eraser Sizes).
  *
  * Blooms radially outward from the active tool button into open canvas space:
- * - Inner Arc: 6 Color swatches
- * - Outer Arc: 6 Stroke thickness swatches (2pt to 17pt)
+ * - For writing tools: Inner Arc = 6 Colors, Outer Arc = 6 Stroke Sizes
+ * - For partial eraser: Inner Arc = 6 Eraser Sizes
  */
 @Composable
 fun RadialColorSizeFlyout(
@@ -48,7 +51,10 @@ fun RadialColorSizeFlyout(
     strokeSize: Float,
     onStrokeSizeChange: (Float) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isEraser: Boolean = false,
+    eraserRadius: Float = 36f,
+    onEraserRadiusChange: (Float) -> Unit = {}
 ) {
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
@@ -85,63 +91,130 @@ fun RadialColorSizeFlyout(
     Box(
         modifier = modifier.fillMaxSize()
     ) {
-        // Inner Arc: 6 Color Swatches
-        paletteColors.forEachIndexed { index, colorItem ->
-            val angle = startAngleDeg + index * (arcSpanDeg / (paletteColors.size - 1).coerceAtLeast(1))
-            val rad = Math.toRadians(angle.toDouble())
-            val dx = (innerRadiusPx * cos(rad)).toFloat()
-            val dy = (innerRadiusPx * sin(rad)).toFloat()
+        if (isEraser) {
+            // Inner Arc: 6 Eraser Size Options
+            ERASER_SIZES.forEachIndexed { index, sizeVal ->
+                val angle = startAngleDeg + index * (arcSpanDeg / (ERASER_SIZES.size - 1).coerceAtLeast(1))
+                val rad = Math.toRadians(angle.toDouble())
+                val dx = (innerRadiusPx * cos(rad)).toFloat()
+                val dy = (innerRadiusPx * sin(rad)).toFloat()
 
-            val sizeDp = 30.dp
-            val halfSizePx = with(density) { (sizeDp / 2).toPx() }
+                val sizeDp = 32.dp
+                val halfSizePx = with(density) { (sizeDp / 2).toPx() }
 
-            val itemXPx = (anchorCenterPx.x + dx).coerceIn(halfSizePx + 8f, screenWidthPx - halfSizePx - 8f)
-            val itemYPx = (anchorCenterPx.y + dy).coerceIn(halfSizePx + 8f, screenHeightPx - halfSizePx - 8f)
+                val itemXPx = (anchorCenterPx.x + dx).coerceIn(halfSizePx + 8f, screenWidthPx - halfSizePx - 8f)
+                val itemYPx = (anchorCenterPx.y + dy).coerceIn(halfSizePx + 8f, screenHeightPx - halfSizePx - 8f)
 
-            val isSelected = index == selectedColorIndex
+                val isSelected = kotlin.math.abs(eraserRadius - sizeVal) < 2f
 
-            Surface(
-                shape = CircleShape,
-                color = colorItem.color,
-                shadowElevation = 5.dp,
-                border = if (isSelected) {
-                    androidx.compose.foundation.BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary)
-                } else {
-                    androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.65f))
-                },
-                modifier = Modifier
-                    .offset {
-                        IntOffset(
-                            (itemXPx - halfSizePx).roundToInt(),
-                            (itemYPx - halfSizePx).roundToInt()
-                        )
-                    }
-                    .size(sizeDp)
-                    .scale(0.35f + 0.65f * bloomProgress)
-                    .alpha(bloomProgress.coerceIn(0f, 1f))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        onColorSelect(index)
-                    }
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (isSelected) {
+                val previewDotDp = when (index) {
+                    0 -> 4.dp
+                    1 -> 6.dp
+                    2 -> 9.dp
+                    3 -> 12.dp
+                    4 -> 15.dp
+                    else -> 18.dp
+                }
+
+                Surface(
+                    shape = CircleShape,
+                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                    shadowElevation = 5.dp,
+                    border = if (isSelected) {
+                        androidx.compose.foundation.BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary)
+                    } else {
+                        androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                    },
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (itemXPx - halfSizePx).roundToInt(),
+                                (itemYPx - halfSizePx).roundToInt()
+                            )
+                        }
+                        .size(sizeDp)
+                        .scale(0.35f + 0.65f * bloomProgress)
+                        .alpha(bloomProgress.coerceIn(0f, 1f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            onEraserRadiusChange(sizeVal)
+                        }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Box(
                             modifier = Modifier
-                                .size(7.dp)
+                                .size(previewDotDp)
                                 .clip(CircleShape)
-                                .background(if (colorItem.color.luminance() > 0.5f) Color.Black else Color.White)
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
                         )
+                    }
+                }
+            }
+        } else {
+            // Inner Arc: 6 Color Swatches
+            paletteColors.forEachIndexed { index, colorItem ->
+                val angle = startAngleDeg + index * (arcSpanDeg / (paletteColors.size - 1).coerceAtLeast(1))
+                val rad = Math.toRadians(angle.toDouble())
+                val dx = (innerRadiusPx * cos(rad)).toFloat()
+                val dy = (innerRadiusPx * sin(rad)).toFloat()
+
+                val sizeDp = 30.dp
+                val halfSizePx = with(density) { (sizeDp / 2).toPx() }
+
+                val itemXPx = (anchorCenterPx.x + dx).coerceIn(halfSizePx + 8f, screenWidthPx - halfSizePx - 8f)
+                val itemYPx = (anchorCenterPx.y + dy).coerceIn(halfSizePx + 8f, screenHeightPx - halfSizePx - 8f)
+
+                val isSelected = index == selectedColorIndex
+
+                Surface(
+                    shape = CircleShape,
+                    color = colorItem.color,
+                    shadowElevation = 5.dp,
+                    border = if (isSelected) {
+                        androidx.compose.foundation.BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary)
+                    } else {
+                        androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.65f))
+                    },
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (itemXPx - halfSizePx).roundToInt(),
+                                (itemYPx - halfSizePx).roundToInt()
+                            )
+                        }
+                        .size(sizeDp)
+                        .scale(0.35f + 0.65f * bloomProgress)
+                        .alpha(bloomProgress.coerceIn(0f, 1f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            onColorSelect(index)
+                        }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(if (colorItem.color.luminance() > 0.5f) Color.Black else Color.White)
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // Outer Arc: 6 Stroke Sizes
-        STROKE_SIZES.forEachIndexed { index, sizeVal ->
-            val angle = startAngleDeg + index * (arcSpanDeg / (STROKE_SIZES.size - 1).coerceAtLeast(1))
+        if (!isEraser) {
+            // Outer Arc: 6 Stroke Sizes
+        FLYOUT_STROKE_SIZES.forEachIndexed { index, sizeVal ->
+            val angle = startAngleDeg + index * (arcSpanDeg / (FLYOUT_STROKE_SIZES.size - 1).coerceAtLeast(1))
             val rad = Math.toRadians(angle.toDouble())
             val dx = (outerRadiusPx * cos(rad)).toFloat()
             val dy = (outerRadiusPx * sin(rad)).toFloat()
@@ -206,6 +279,7 @@ fun RadialColorSizeFlyout(
                     )
                 }
             }
+        }
         }
     }
 }

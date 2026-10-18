@@ -113,6 +113,10 @@ fun SettingsDialog(
     onShapeSnappingEnabledChange: (Boolean) -> Unit = {},
     shapeSnapDelayMs: Long = 400L,
     onShapeSnapDelayMsChange: (Long) -> Unit = {},
+    holdToEraseEnabled: Boolean = true,
+    onHoldToEraseEnabledChange: (Boolean) -> Unit = {},
+    holdToEraseDelayMs: Long = 350L,
+    onHoldToEraseDelayMsChange: (Long) -> Unit = {},
     backupFolderDisplayName: String = "",
     isBackupFolderConfigured: Boolean = false,
     onSelectBackupFolder: () -> Unit = {},
@@ -328,6 +332,10 @@ fun SettingsDialog(
                                     onShapeSnappingEnabledChange = onShapeSnappingEnabledChange,
                                     shapeSnapDelayMs = shapeSnapDelayMs,
                                     onShapeSnapDelayMsChange = onShapeSnapDelayMsChange,
+                                    holdToEraseEnabled = holdToEraseEnabled,
+                                    onHoldToEraseEnabledChange = onHoldToEraseEnabledChange,
+                                    holdToEraseDelayMs = holdToEraseDelayMs,
+                                    onHoldToEraseDelayMsChange = onHoldToEraseDelayMsChange,
                                     pressureBezier = pressureBezier,
                                     onPressureBezierChange = onPressureBezierChange,
                                     velocityBezier = velocityBezier,
@@ -422,6 +430,10 @@ private fun PenStylusDetail(
     onShapeSnappingEnabledChange: (Boolean) -> Unit,
     shapeSnapDelayMs: Long,
     onShapeSnapDelayMsChange: (Long) -> Unit,
+    holdToEraseEnabled: Boolean,
+    onHoldToEraseEnabledChange: (Boolean) -> Unit,
+    holdToEraseDelayMs: Long,
+    onHoldToEraseDelayMsChange: (Long) -> Unit,
     pressureBezier: BezierControlPoints,
     onPressureBezierChange: (BezierControlPoints) -> Unit,
     velocityBezier: BezierControlPoints,
@@ -501,6 +513,49 @@ private fun PenStylusDetail(
             Slider(
                 value = shapeSnapDelayMs.toFloat(),
                 onValueChange = { onShapeSnapDelayMsChange(it.roundToInt().toLong()) },
+                valueRange = 200f..1000f,
+                steps = 15,
+                modifier = Modifier.fillMaxWidth().height(24.dp)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    SectionHeader("HOLD TO ERASE")
+    SettingsCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Hold to Erase", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                Text(
+                    text = "Hold stylus stationary on contact to temporarily erase, lifting stylus returns to active tool",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+            Switch(
+                checked = holdToEraseEnabled,
+                onCheckedChange = onHoldToEraseEnabledChange,
+                modifier = Modifier.scale(0.8f)
+            )
+        }
+
+        if (holdToEraseEnabled) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Hold Delay", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Text("${holdToEraseDelayMs}ms", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+            }
+            Slider(
+                value = holdToEraseDelayMs.toFloat(),
+                onValueChange = { onHoldToEraseDelayMsChange(it.roundToInt().toLong()) },
                 valueRange = 200f..1000f,
                 steps = 15,
                 modifier = Modifier.fillMaxWidth().height(24.dp)

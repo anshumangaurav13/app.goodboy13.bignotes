@@ -57,6 +57,8 @@ fun FloatingNoteToolbar(
     onToolChange: (ActiveTool) -> Unit,
     strokeSize: Float,
     onStrokeSizeChange: (Float) -> Unit,
+    eraserRadius: Float = 36f,
+    onEraserRadiusChange: (Float) -> Unit = {},
     paletteColors: List<InkColorItem>,
     selectedColorIndex: Int,
     onColorSelect: (Int) -> Unit,
@@ -93,6 +95,7 @@ fun FloatingNoteToolbar(
     var fountainPenAnchor by remember { mutableStateOf(Offset.Zero) }
     var pencilAnchor by remember { mutableStateOf(Offset.Zero) }
     var highlighterAnchor by remember { mutableStateOf(Offset.Zero) }
+    var eraserAnchor by remember { mutableStateOf(Offset.Zero) }
     var collapsedToolAnchor by remember { mutableStateOf(Offset.Zero) }
 
     val activeToolAnchor = if (isCollapsed) {
@@ -101,6 +104,7 @@ fun FloatingNoteToolbar(
         when (activeTool) {
             ActiveTool.PENCIL -> pencilAnchor
             ActiveTool.HIGHLIGHTER -> highlighterAnchor
+            ActiveTool.PRECISION_ERASER -> eraserAnchor
             else -> fountainPenAnchor
         }
     }
@@ -268,7 +272,9 @@ fun FloatingNoteToolbar(
                             onModeSwitch = { next ->
                                 lastEraserMode = next
                                 onToolChange(next)
-                            }
+                            },
+                            onPositioned = { eraserAnchor = it },
+                            onToggleRadial = { isRadialOpen = !isRadialOpen }
                         )
 
                         Spacer(modifier = Modifier.width(4.dp))
@@ -348,7 +354,9 @@ fun FloatingNoteToolbar(
                             onModeSwitch = { next ->
                                 lastEraserMode = next
                                 onToolChange(next)
-                            }
+                            },
+                            onPositioned = { eraserAnchor = it },
+                            onToggleRadial = { isRadialOpen = !isRadialOpen }
                         )
 
                         // Lasso
@@ -507,7 +515,9 @@ fun FloatingNoteToolbar(
                             onModeSwitch = { next ->
                                 lastEraserMode = next
                                 onToolChange(next)
-                            }
+                            },
+                            onPositioned = { eraserAnchor = it },
+                            onToggleRadial = { isRadialOpen = !isRadialOpen }
                         )
 
                         Spacer(modifier = Modifier.height(4.dp))
@@ -587,7 +597,9 @@ fun FloatingNoteToolbar(
                             onModeSwitch = { next ->
                                 lastEraserMode = next
                                 onToolChange(next)
-                            }
+                            },
+                            onPositioned = { eraserAnchor = it },
+                            onToggleRadial = { isRadialOpen = !isRadialOpen }
                         )
 
                         // Lasso
@@ -685,6 +697,11 @@ fun FloatingNoteToolbar(
                 onStrokeSizeChange = { sz ->
                     onStrokeSizeChange(sz)
                 },
+                isEraser = activeTool == ActiveTool.PRECISION_ERASER,
+                eraserRadius = eraserRadius,
+                onEraserRadiusChange = { newR ->
+                    onEraserRadiusChange(newR)
+                },
                 onDismiss = { isRadialOpen = false }
             )
         }
@@ -780,46 +797,60 @@ private fun WritingToolButton(
 private fun EraserButton(
     activeTool: ActiveTool,
     lastEraserMode: ActiveTool,
-    onModeSwitch: (ActiveTool) -> Unit
+    onModeSwitch: (ActiveTool) -> Unit,
+    onPositioned: (Offset) -> Unit = {},
+    onToggleRadial: () -> Unit = {}
 ) {
     val isPrecision = activeTool == ActiveTool.PRECISION_ERASER
     val isStrokeEraser = activeTool == ActiveTool.WHOLE_STROKE_ERASER
     val isEraserActive = isPrecision || isStrokeEraser
 
-    IconButton(
-        onClick = {
-            if (!isEraserActive) {
-                onModeSwitch(lastEraserMode)
-            } else {
-                val nextMode = if (isStrokeEraser) ActiveTool.PRECISION_ERASER else ActiveTool.WHOLE_STROKE_ERASER
-                onModeSwitch(nextMode)
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(
+                if (isEraserActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                else Color.Transparent
+            )
+            .onGloballyPositioned { coords ->
+                val bounds = coords.boundsInRoot()
+                onPositioned(Offset(bounds.left + bounds.width / 2f, bounds.top + bounds.height / 2f))
             }
-        },
-        colors = if (isEraserActive) {
-            IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                contentColor = MaterialTheme.colorScheme.primary
-            )
-        } else IconButtonDefaults.iconButtonColors(),
-        modifier = Modifier.size(36.dp)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = if (isStrokeEraser) Icons.Default.DeleteSweep else Icons.Default.AutoFixNormal,
-                contentDescription = if (isStrokeEraser) "Stroke Eraser" else "Partial Eraser",
-                modifier = Modifier.size(20.dp),
-                tint = if (isEraserActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-            )
-            if (isEraserActive) {
-                Text(
-                    text = if (isStrokeEraser) "S" else "P",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Black),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .offset(x = 3.dp, y = 2.dp)
+            .pointerInput(isEraserActive, isPrecision, lastEraserMode) {
+                detectTapGestures(
+                    onTap = {
+                        if (!isEraserActive) {
+                            onModeSwitch(lastEraserMode)
+                        } else if (isPrecision) {
+                            onToggleRadial()
+                        } else {
+                            onModeSwitch(ActiveTool.PRECISION_ERASER)
+                        }
+                    },
+                    onLongPress = {
+                        val nextMode = if (isStrokeEraser) ActiveTool.PRECISION_ERASER else ActiveTool.WHOLE_STROKE_ERASER
+                        onModeSwitch(nextMode)
+                    }
                 )
-            }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = if (isStrokeEraser) Icons.Default.DeleteSweep else Icons.Default.AutoFixNormal,
+            contentDescription = if (isStrokeEraser) "Stroke Eraser (Long press to switch)" else "Partial Eraser (Tap for sizes, long press to switch)",
+            modifier = Modifier.size(20.dp),
+            tint = if (isEraserActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
+        if (isEraserActive) {
+            Text(
+                text = if (isStrokeEraser) "S" else "P",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Black),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = (-3).dp, y = (-2).dp)
+            )
         }
     }
 }
