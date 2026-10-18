@@ -293,6 +293,7 @@ class SketchCanvasView @JvmOverloads constructor(
     // In-flight stroke points
     private val activeStrokePoints = mutableListOf<StrokePoint>()
     private var liveDabGenerator: app.goodboy13.bignotes.core.geometry.DabGenerator? = null
+    private val stylusMotionPredictor = StylusMotionPredictor(lookaheadMs = 12.0f, maxPredictionDistanceScreenPx = 25.0f)
 
     // Lasso & Selection State
     val activeLassoPoints = mutableListOf<PointF>()
@@ -766,6 +767,7 @@ class SketchCanvasView @JvmOverloads constructor(
                             isLongPressConsumed = true
                             activeStrokePoints.clear()
                             liveDabGenerator = null
+                            stylusMotionPredictor.reset()
                             frontBufferedRenderer?.renderFrontBufferedLayer(
                                 FrontBufferPacket(clearBeforeDraw = true)
                             )
@@ -1045,6 +1047,7 @@ class SketchCanvasView @JvmOverloads constructor(
                     } else {
                         lastPointTimeNanos = 0L
                         lastRecordedTimeNanos = 0L
+                        stylusMotionPredictor.reset()
                         activeStrokePoints.clear()
                         liveDabGenerator = null
                         frontBufferedRenderer?.renderFrontBufferedLayer(
@@ -1382,6 +1385,8 @@ class SketchCanvasView @JvmOverloads constructor(
 
         val pt = StrokePoint(wx, wy, pressure, time)
         activeStrokePoints.add(pt)
+        stylusMotionPredictor.reset()
+        stylusMotionPredictor.addPoint(StrokePoint(sx, sy, pressure, time))
 
         shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
         shapeSnapRunnable = null
@@ -1509,6 +1514,7 @@ class SketchCanvasView @JvmOverloads constructor(
                 activeStrokePoints.add(
                     StrokePoint(hwx, hwy, finalBakedPressure, hTime)
                 )
+                stylusMotionPredictor.addPoint(StrokePoint(hsx, hsy, finalBakedPressure, hTime))
                 newDabs.addAll(gen.addPoint(hwx, hwy, finalBakedPressure))
             }
 
@@ -1541,11 +1547,29 @@ class SketchCanvasView @JvmOverloads constructor(
             val finalEffPressure = (effPressure * (thinning * thinning)).coerceIn(0.01f, 1.0f)
 
             activeStrokePoints.add(StrokePoint(wx, wy, finalEffPressure, event.eventTime))
+            stylusMotionPredictor.addPoint(StrokePoint(curSx, curSy, finalEffPressure, event.eventTime))
             newDabs.addAll(gen.addPoint(wx, wy, finalEffPressure))
 
-            if (newDabs.isNotEmpty()) {
+            val predictedScreenPt = stylusMotionPredictor.predict()
+            val predDabs = if (predictedScreenPt != null) {
+                val (predWx, predWy) = screenToWorld(predictedScreenPt.x, predictedScreenPt.y)
+                gen.predictSegment(wx, wy, finalEffPressure, predWx, predWy, finalEffPressure)
+            } else {
+                emptyList()
+            }
+
+            val allDabs = if (predDabs.isNotEmpty()) {
+                ArrayList<StrokePoint>(newDabs.size + predDabs.size).apply {
+                    addAll(newDabs)
+                    addAll(predDabs)
+                }
+            } else {
+                newDabs
+            }
+
+            if (allDabs.isNotEmpty()) {
                 frontBufferedRenderer?.renderFrontBufferedLayer(
-                    FrontBufferPacket(dabs = newDabs, clearBeforeDraw = false)
+                    FrontBufferPacket(dabs = allDabs, clearBeforeDraw = false)
                 )
             }
     }
@@ -1553,6 +1577,7 @@ class SketchCanvasView @JvmOverloads constructor(
     private fun finalizeCurrentStroke() {
         lastPointTimeNanos = 0L
         lastRecordedTimeNanos = 0L
+        stylusMotionPredictor.reset()
         onPenContactChanged?.invoke(false)
         if (activeStrokePoints.isNotEmpty()) {
             val isHighlighter = activeTool == ActiveTool.HIGHLIGHTER

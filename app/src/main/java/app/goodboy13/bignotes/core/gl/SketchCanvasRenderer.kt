@@ -163,6 +163,7 @@ class SketchCanvasRenderer(
     private val fboOrthoMatrix = FloatArray(16)
     private val fboWorldToViewMatrix = FloatArray(16)
     private val fboMvpMatrix = FloatArray(16)
+    private val invFboMvpMatrix = FloatArray(16)
     private val invFboWorldToViewMatrix = FloatArray(16)
     private val affineMatrix = FloatArray(16)
     private val finalBlitMatrix = FloatArray(16)
@@ -541,6 +542,55 @@ class SketchCanvasRenderer(
         // directScreenMvpMatrix: maps canvas world coordinates -> view pixels -> buffer NDC
         Matrix.multiplyMM(directScreenMvpMatrix, 0, screenProjectionMatrix, 0, currentWorldToViewMatrix, 0)
 
+        // Static Chunk FBO Compositor: during interactive gestures (pinch, pan, rotate, fling),
+        // blit the pre-rendered committedFbo texture in a single hardware quad pass (<0.2ms GPU time)
+        // rather than recalculating and drawing hundreds of chunk meshes at 120Hz.
+        if (isInteractiveGesture) {
+            val fbo = committedFbo
+            if (fbo != null && fbo.textureId != 0) {
+                val zoomRatio = if (fboZoom > 0f) zoomScale / fboZoom else 1.0f
+                val effScale = zoomScale * pageScale
+                val driftX = kotlin.math.abs(panX - fboPanX) * effScale
+                val driftY = kotlin.math.abs(panY - fboPanY) * effScale
+                val maxDriftX = (fboWidth - width) * 0.40f
+                val maxDriftY = (fboHeight - height) * 0.40f
+                val driftExceeded = zoomRatio !in 0.70f..1.40f || driftX > maxDriftX || driftY > maxDriftY || (isFlippedHorizontal != fboFlipped)
+
+                if (isFboDirty || driftExceeded) {
+                    renderCommittedFbo(width, height)
+                    GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, bufferInfo.frameBufferId)
+                    GLES30.glViewport(0, 0, bufferInfo.width, bufferInfo.height)
+                }
+
+                if (Matrix.invertM(invFboMvpMatrix, 0, fboMvpMatrix, 0)) {
+                    Matrix.multiplyMM(finalBlitMatrix, 0, directScreenMvpMatrix, 0, invFboMvpMatrix, 0)
+                    blitShader?.blit(fbo.textureId, finalBlitMatrix, -1f, -1f, 1f, 1f, enableBlend = false)
+                }
+
+                // Render lasso-selected strokes directly with real-time translation offset
+                if (selectedStrokes.isNotEmpty()) {
+                    computeWorldToViewMatrix(
+                        selectionWorldToViewMatrix,
+                        width.toFloat(),
+                        panX, panY, zoomScale, rotationDegrees, isFlippedHorizontal,
+                        worldOffsetX = selectionDragDx,
+                        worldOffsetY = selectionDragDy
+                    )
+                    Matrix.multiplyMM(selectionMvpMatrix, 0, screenProjectionMatrix, 0, selectionWorldToViewMatrix, 0)
+                    shader.invertColors = isDarkMode
+                    shader.use(selectionMvpMatrix, noiseTextureId)
+                    val (selHighlighters, selInks) = selectedStrokes.partition { it.isHighlighter }
+                    if (selHighlighters.isNotEmpty()) {
+                        highlighterStore.renderStrokesDirect(shader, selHighlighters, ::getOrCreateMesh)
+                    }
+                    if (selInks.isNotEmpty()) {
+                        inkStore.renderStrokesDirect(shader, selInks, ::getOrCreateMesh)
+                    }
+                }
+                return
+            }
+        }
+
         // 3. Viewport AABB Frustum Culling (only visible chunks are drawn)
         var visMinX = Float.POSITIVE_INFINITY
         var visMinY = Float.POSITIVE_INFINITY
@@ -661,8 +711,10 @@ class SketchCanvasRenderer(
             }
         }
 
-        // Keep FBO dirty flag updated so eyedropper tool refreshes if used
-        isFboDirty = true
+        // Keep committedFbo primed with latest camera and strokes so interactive gestures start instantly
+        renderCommittedFbo(width, height)
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, bufferInfo.frameBufferId)
+        GLES30.glViewport(0, 0, bufferInfo.width, bufferInfo.height)
 
         val err = GLES30.glGetError()
         if (err != GLES30.GL_NO_ERROR) {
@@ -743,6 +795,18 @@ class SketchCanvasRenderer(
 
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+
+        // Render procedural background grid into FBO
+        if (gridConfig.enabled) {
+            if (Matrix.invertM(invFboMvpMatrix, 0, fboMvpMatrix, 0)) {
+                gridRenderer.draw(
+                    invFboMvpMatrix,
+                    paperColor,
+                    gridConfig,
+                    zoomScale * pageScale
+                )
+            }
+        }
 
         if (showPageSeparators) {
             pageSeparatorRenderer.draw(

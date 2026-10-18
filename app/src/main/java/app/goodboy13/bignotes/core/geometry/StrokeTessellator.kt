@@ -66,6 +66,29 @@ class DabGenerator(private val stepDistance: Float) {
         lastPressure = pressure
         return dabs
     }
+
+    /**
+     * Generates hypothetical dabs from (x1, y1) to (x2, y2) without mutating
+     * the internal generator state, allowing predictive front-buffer visualization.
+     */
+    fun predictSegment(x1: Float, y1: Float, p1: Float, x2: Float, y2: Float, p2: Float): List<StrokePoint> {
+        val dx = x2 - x1
+        val dy = y2 - y1
+        val segDist = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+        if (segDist < 1e-4f) return emptyList()
+
+        val dabs = ArrayList<StrokePoint>()
+        var curDist = distToNextDab
+        while (curDist <= segDist) {
+            val t = curDist / segDist
+            val dabX = x1 + dx * t
+            val dabY = y1 + dy * t
+            val dabP = p1 + (p2 - p1) * t
+            dabs.add(StrokePoint(dabX, dabY, dabP, 0L))
+            curDist += stepDistance
+        }
+        return dabs
+    }
 }
 
 object StrokeTessellator {

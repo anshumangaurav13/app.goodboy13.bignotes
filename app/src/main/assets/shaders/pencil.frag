@@ -128,9 +128,11 @@ void main() {
         }
     } else {
         // --- SOLID CONTINUOUS HIGHLIGHTER ---
-        // Clean, flat, completely solid stroke with sub-pixel analytical anti-aliasing edge
-        float aaEdge = clamp((1.0 - dist) / max(delta, 1e-4), 0.0, 1.0);
-        finalAlpha = aaEdge;
+        // Clean, uniform stroke with cubic Hermite analytical sub-pixel anti-aliased edge
+        float aaWidth = max(delta * 1.25, 1e-4);
+        float t = clamp((1.0 - dist) / aaWidth, 0.0, 1.0);
+        float aaEdge = t * t * (3.0 - 2.0 * t);
+        finalAlpha = v_color.a * aaEdge;
         outRgb = v_color.rgb;
     }
 
