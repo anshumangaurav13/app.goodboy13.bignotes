@@ -9,9 +9,9 @@ A fast, smooth, infinite canvas note-taking app designed for Android tablets.
 
 ### Download
 
-[![Download APK](https://img.shields.io/badge/Download-v1.0_Release_APK-blue?style=for-the-badge&logo=android)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/tag/v1.0)
+[![Download APK](https://img.shields.io/badge/Download-v1.1_Release_APK-blue?style=for-the-badge&logo=android)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/latest)
 
-**[Download BigNotes v1.0 (APK)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/download/v1.0/BigNotes-v1.0.apk)**
+**[Download BigNotes v1.1 (APK)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/download/v1.1/BigNotes-v1.1.apk)**
 
 ---
 
