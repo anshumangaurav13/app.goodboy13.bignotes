@@ -75,8 +75,3 @@ app.goodboy13.bignotes/
 
 Built APKs are automatically archived to `archives/apks/`.
 
----
-
-## 📄 License
-
-BigNotes is open source software.
