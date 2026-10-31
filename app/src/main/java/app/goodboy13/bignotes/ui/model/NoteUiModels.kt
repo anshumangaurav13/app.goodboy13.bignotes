@@ -18,6 +18,24 @@ data class NoteItem(
     val strokeCount: Int = 0
 )
 
+enum class NoteSortOrder(val displayName: String, val shortLabel: String) {
+    MODIFIED_DESC("Date Modified (Newest)", "Newest modified"),
+    MODIFIED_ASC("Date Modified (Oldest)", "Oldest modified"),
+    CREATED_DESC("Date Created (Newest)", "Newest created"),
+    CREATED_ASC("Date Created (Oldest)", "Oldest created"),
+    TITLE_ASC("Title (A to Z)", "A to Z"),
+    TITLE_DESC("Title (Z to A)", "Z to A")
+}
+
+fun List<NoteItem>.sortedWithOrder(order: NoteSortOrder): List<NoteItem> = when (order) {
+    NoteSortOrder.MODIFIED_DESC -> sortedWith(compareByDescending<NoteItem> { it.updatedAt }.thenByDescending { it.createdAt })
+    NoteSortOrder.MODIFIED_ASC -> sortedWith(compareBy<NoteItem> { it.updatedAt }.thenBy { it.createdAt })
+    NoteSortOrder.CREATED_DESC -> sortedWith(compareByDescending<NoteItem> { it.createdAt }.thenByDescending { it.updatedAt })
+    NoteSortOrder.CREATED_ASC -> sortedWith(compareBy<NoteItem> { it.createdAt }.thenBy { it.updatedAt })
+    NoteSortOrder.TITLE_ASC -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+    NoteSortOrder.TITLE_DESC -> sortedWith(compareByDescending(String.CASE_INSENSITIVE_ORDER) { it.title })
+}
+
 object MockData {
     val sampleFolders = listOf(
         FolderItem(id = "folder_1", name = "Folder 1", noteCount = 3),

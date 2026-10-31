@@ -66,6 +66,8 @@ import app.goodboy13.bignotes.ui.canvas.BigNotesCanvasView
 import app.goodboy13.bignotes.ui.model.FolderItem
 import app.goodboy13.bignotes.ui.model.MockData
 import app.goodboy13.bignotes.ui.model.NoteItem
+import app.goodboy13.bignotes.ui.model.NoteSortOrder
+import app.goodboy13.bignotes.ui.model.sortedWithOrder
 import app.goodboy13.bignotes.ui.settings.SettingsDialog
 import app.goodboy13.bignotes.ui.settings.SettingsCategory
 import app.goodboy13.bignotes.core.search.HandwritingSearchManager
@@ -236,6 +238,10 @@ fun BigNotesMainScreen(
     }
     var strictStylusMode by remember {
         mutableStateOf(prefs.getBoolean("strict_stylus_mode", true))
+    }
+    var noteSortOrder by remember {
+        val savedOrder = prefs.getString("note_sort_order", NoteSortOrder.MODIFIED_DESC.name) ?: NoteSortOrder.MODIFIED_DESC.name
+        mutableStateOf(try { NoteSortOrder.valueOf(savedOrder) } catch (e: Exception) { NoteSortOrder.MODIFIED_DESC })
     }
     var isFoldersVisible by remember {
         mutableStateOf(prefs.getBoolean("is_folders_visible", true))
@@ -858,8 +864,8 @@ fun BigNotesMainScreen(
         canvasView?.requestRedraw()
     }
 
-    val currentNotes = remember(selectedFolderId, allNotes) {
-        allNotes.filter { it.folderId == selectedFolderId }
+    val currentNotes = remember(selectedFolderId, allNotes, noteSortOrder) {
+        allNotes.filter { it.folderId == selectedFolderId }.sortedWithOrder(noteSortOrder)
     }
 
     val currentFolder = remember(selectedFolderId, folders) {
@@ -1249,6 +1255,11 @@ fun BigNotesMainScreen(
                 selectedFolderId = selectedFolderId,
                 notes = currentNotes,
                 selectedNoteId = selectedNoteId,
+                sortOrder = noteSortOrder,
+                onSortOrderChange = { newOrder ->
+                    noteSortOrder = newOrder
+                    prefs.edit().putString("note_sort_order", newOrder.name).apply()
+                },
                 onFolderSelect = { folderId ->
                     flushSaveNow(selectedNoteId)
                     selectedNoteId?.let { currentId ->

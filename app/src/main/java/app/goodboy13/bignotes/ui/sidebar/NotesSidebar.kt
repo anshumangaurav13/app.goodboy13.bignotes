@@ -12,11 +12,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewSidebar
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.SortByAlpha
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -43,6 +49,8 @@ import androidx.compose.ui.unit.sp
 import app.goodboy13.bignotes.ui.components.InPlaceRenameField
 import app.goodboy13.bignotes.ui.components.SwipeToRevealItem
 import app.goodboy13.bignotes.ui.model.NoteItem
+import app.goodboy13.bignotes.ui.model.NoteSortOrder
+import app.goodboy13.bignotes.ui.model.sortedWithOrder
 import app.goodboy13.bignotes.core.export.PageFormat
 import app.goodboy13.bignotes.core.export.PdfPagePaginator
 import app.goodboy13.bignotes.core.search.model.SearchHit
@@ -54,6 +62,8 @@ import kotlin.math.max
 fun NotesSidebar(
     notes: List<NoteItem>,
     selectedNoteId: String?,
+    sortOrder: NoteSortOrder = NoteSortOrder.MODIFIED_DESC,
+    onSortOrderChange: (NoteSortOrder) -> Unit = {},
     onNoteSelect: (String) -> Unit,
     onNoteDelete: (String) -> Unit,
     onNoteRename: ((noteId: String, newTitle: String) -> Unit)? = null,
@@ -75,9 +85,10 @@ fun NotesSidebar(
 ) {
     var editingNoteId by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
 
-    val filteredNotes = remember(notes, searchQuery, searchHits) {
-        if (searchQuery.isBlank()) notes
+    val filteredNotes = remember(notes, searchQuery, searchHits, sortOrder) {
+        val baseList = if (searchQuery.isBlank()) notes
         else {
             val q = searchQuery.trim().lowercase()
             notes.filter { note ->
@@ -86,6 +97,7 @@ fun NotesSidebar(
                 searchHits.containsKey(note.id)
             }
         }
+        baseList.sortedWithOrder(sortOrder)
     }
 
     Column(
@@ -135,31 +147,141 @@ fun NotesSidebar(
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            val addNoteBgColor = if (canAddNote) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-            }
-            val addNoteIconTint = if (canAddNote) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-            }
-            Surface(
-                shape = CircleShape,
-                color = addNoteBgColor,
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .then(if (canAddNote) Modifier.clickable(onClick = onAddNote) else Modifier)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.NoteAdd,
-                        contentDescription = if (canAddNote) "New Note" else "Create a folder first",
-                        tint = addNoteIconTint,
-                        modifier = Modifier.size(18.dp)
-                    )
+                // Sort Menu Trigger
+                Box {
+                    IconButton(
+                        onClick = { sortMenuExpanded = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Sort,
+                            contentDescription = "Sort Notes (${sortOrder.displayName})",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = sortMenuExpanded,
+                        onDismissRequest = { sortMenuExpanded = false }
+                    ) {
+                        Text(
+                            text = "Sort By",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Date Modified (Newest)", style = MaterialTheme.typography.bodySmall) },
+                            leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            trailingIcon = if (sortOrder == NoteSortOrder.MODIFIED_DESC) {
+                                { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            onClick = {
+                                onSortOrderChange(NoteSortOrder.MODIFIED_DESC)
+                                sortMenuExpanded = false
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Date Modified (Oldest)", style = MaterialTheme.typography.bodySmall) },
+                            leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            trailingIcon = if (sortOrder == NoteSortOrder.MODIFIED_ASC) {
+                                { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            onClick = {
+                                onSortOrderChange(NoteSortOrder.MODIFIED_ASC)
+                                sortMenuExpanded = false
+                            }
+                        )
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+
+                        DropdownMenuItem(
+                            text = { Text("Date Created (Newest)", style = MaterialTheme.typography.bodySmall) },
+                            leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            trailingIcon = if (sortOrder == NoteSortOrder.CREATED_DESC) {
+                                { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            onClick = {
+                                onSortOrderChange(NoteSortOrder.CREATED_DESC)
+                                sortMenuExpanded = false
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Date Created (Oldest)", style = MaterialTheme.typography.bodySmall) },
+                            leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            trailingIcon = if (sortOrder == NoteSortOrder.CREATED_ASC) {
+                                { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            onClick = {
+                                onSortOrderChange(NoteSortOrder.CREATED_ASC)
+                                sortMenuExpanded = false
+                            }
+                        )
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+
+                        DropdownMenuItem(
+                            text = { Text("Title (A to Z)", style = MaterialTheme.typography.bodySmall) },
+                            leadingIcon = { Icon(Icons.Default.SortByAlpha, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            trailingIcon = if (sortOrder == NoteSortOrder.TITLE_ASC) {
+                                { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            onClick = {
+                                onSortOrderChange(NoteSortOrder.TITLE_ASC)
+                                sortMenuExpanded = false
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Title (Z to A)", style = MaterialTheme.typography.bodySmall) },
+                            leadingIcon = { Icon(Icons.Default.SortByAlpha, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            trailingIcon = if (sortOrder == NoteSortOrder.TITLE_DESC) {
+                                { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            onClick = {
+                                onSortOrderChange(NoteSortOrder.TITLE_DESC)
+                                sortMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+
+                val addNoteBgColor = if (canAddNote) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                }
+                val addNoteIconTint = if (canAddNote) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = addNoteBgColor,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .then(if (canAddNote) Modifier.clickable(onClick = onAddNote) else Modifier)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.NoteAdd,
+                            contentDescription = if (canAddNote) "New Note" else "Create a folder first",
+                            tint = addNoteIconTint,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
@@ -232,6 +354,45 @@ fun NotesSidebar(
                             modifier = Modifier.size(16.dp)
                         )
                     }
+                }
+            }
+        }
+
+        // Sort status indicator & count
+        if (notes.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (filteredNotes.size == 1) "1 note" else "${filteredNotes.size} notes",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { sortMenuExpanded = true }
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = sortOrder.shortLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Change sort",
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                        modifier = Modifier.size(14.dp)
+                    )
                 }
             }
         }

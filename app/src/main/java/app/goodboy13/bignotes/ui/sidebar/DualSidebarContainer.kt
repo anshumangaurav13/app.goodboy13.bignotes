@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.goodboy13.bignotes.ui.model.FolderItem
 import app.goodboy13.bignotes.ui.model.NoteItem
+import app.goodboy13.bignotes.ui.model.NoteSortOrder
 
 object SidebarLayoutDefaults {
     fun folderWidth(screenWidthDp: Int, isPortrait: Boolean): Dp = when {
@@ -40,6 +41,8 @@ fun DualSidebarContainer(
     selectedFolderId: String?,
     notes: List<NoteItem>,
     selectedNoteId: String?,
+    sortOrder: NoteSortOrder = NoteSortOrder.MODIFIED_DESC,
+    onSortOrderChange: (NoteSortOrder) -> Unit = {},
     onFolderSelect: (String) -> Unit,
     onFolderDelete: (String) -> Unit,
     onFolderRename: ((folderId: String, newName: String) -> Unit)? = null,
@@ -114,6 +117,8 @@ fun DualSidebarContainer(
             NotesSidebar(
                 notes = notes,
                 selectedNoteId = selectedNoteId,
+                sortOrder = sortOrder,
+                onSortOrderChange = onSortOrderChange,
                 canAddNote = folders.isNotEmpty(),
                 onNoteSelect = onNoteSelect,
                 onNoteDelete = onNoteDelete,
