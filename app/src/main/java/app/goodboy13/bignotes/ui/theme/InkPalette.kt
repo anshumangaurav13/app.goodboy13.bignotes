@@ -19,7 +19,7 @@ object InkPalette {
     // Slot 4: Emerald
     // Slot 5: Amber
     private val StandardInkColors = listOf(
-        InkColorItem(0, "Ink Black", Color(0xFF0F172A)),
+        InkColorItem(0, "Ink Black", Color(0xFF000000)),
         InkColorItem(1, "Slate", Color(0xFF475569)),
         InkColorItem(2, "Crimson", Color(0xFFB91C1C)),
         InkColorItem(3, "Royal Blue", Color(0xFF1D4ED8)),

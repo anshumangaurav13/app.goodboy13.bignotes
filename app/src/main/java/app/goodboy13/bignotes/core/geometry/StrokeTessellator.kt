@@ -146,7 +146,7 @@ object StrokeTessellator {
         PencilTone.HARD -> QuadColor(0.24f, 0.26f, 0.28f, 0.48f) // #383E44 crisp silvery 2H graphite
         PencilTone.SOFT -> QuadColor(0.12f, 0.13f, 0.15f, 0.72f) // #1E2226 natural velvety 2B graphite
         PencilTone.LIGHT -> QuadColor(1.0f, 0.99f, 0.96f, 0.85f) // #FFFDF5 subtle parchment highlight
-        PencilTone.INK_BLACK -> QuadColor(0.07f, 0.08f, 0.09f, 1.0f) // #121417 solid rich carbon black
+        PencilTone.INK_BLACK -> QuadColor(0.0f, 0.0f, 0.0f, 1.0f) // #121417 solid rich carbon black
         PencilTone.INK_BLUE -> QuadColor(0.06f, 0.16f, 0.38f, 1.0f) // #0F2961 solid deep navy blue
         PencilTone.INK_RED -> QuadColor(0.48f, 0.08f, 0.12f, 1.0f) // #7A141F solid deep oxblood red
     }

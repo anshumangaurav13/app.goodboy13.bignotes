@@ -215,7 +215,7 @@ class GlPageRasterizer(private val context: Context) : AutoCloseable {
         val pagePixelWidth = (pageFormat.widthPt * dpiScale).roundToInt()
         val numTiles = 2
 
-        val targetStrokes = partition.strokes.filter(filterStroke).sortedBy { if (it.isHighlighter) 0 else 1 }
+        val targetStrokes = partition.strokes.filter(filterStroke).sortedBy { if (it.isHighlighter) 0 else if (!it.isInk && !it.tone.isInk) 1 else 2 }
 
         for (tileIndex in 0 until numTiles) {
             val tileTopPt = tileIndex * (pageFormat.heightPt.toFloat() / numTiles)
@@ -300,10 +300,11 @@ class GlPageRasterizer(private val context: Context) : AutoCloseable {
                 )
 
                 if (mesh.vertexCount > 0) {
-                    if (stroke.isHighlighter) {
-                        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
-                    } else {
+                    val isFountainPen = (stroke.isInk || stroke.tone.isInk) && !stroke.isHighlighter
+                    if (isFountainPen && clearWhite) {
                         GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+                    } else {
+                        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
                     }
                     val buf = getDirectMeshBuffer(mesh.data.size)
                     buf.put(mesh.data, 0, mesh.data.size)

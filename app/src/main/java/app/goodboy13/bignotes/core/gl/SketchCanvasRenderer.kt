@@ -32,7 +32,8 @@ class SketchCanvasRenderer(
 ) : GLFrontBufferedRenderer.Callback<FrontBufferPacket> {
 
     private val highlighterStore = ChunkedVboStore()
-    private val inkStore = ChunkedVboStore()
+    private val pencilStore = ChunkedVboStore()
+    private val penStore = ChunkedVboStore()
     private var graphiteShader: GraphiteShader? = null
     private var noiseTextureId: Int = 0
     private val pageSeparatorRenderer = PageSeparatorRenderer()
@@ -238,9 +239,12 @@ class SketchCanvasRenderer(
     }
 
     fun setStrokes(strokes: List<Stroke>) {
-        val (highlighters, inks) = strokes.partition { it.isHighlighter }
+        val highlighters = strokes.filter { it.isHighlighter }
+        val pencils = strokes.filter { !it.isHighlighter && !it.isInk }
+        val pens = strokes.filter { !it.isHighlighter && it.isInk }
         highlighterStore.setAllStrokes(highlighters, ::getOrCreateMesh)
-        inkStore.setAllStrokes(inks, ::getOrCreateMesh)
+        pencilStore.setAllStrokes(pencils, ::getOrCreateMesh)
+        penStore.setAllStrokes(pens, ::getOrCreateMesh)
         meshCache.clear()
         isFboDirty = true
     }
@@ -248,8 +252,10 @@ class SketchCanvasRenderer(
     fun addCommittedStroke(stroke: Stroke) {
         if (stroke.isHighlighter) {
             highlighterStore.appendStroke(stroke, ::getOrCreateMesh)
+        } else if (!stroke.isInk) {
+            pencilStore.appendStroke(stroke, ::getOrCreateMesh)
         } else {
-            inkStore.appendStroke(stroke, ::getOrCreateMesh)
+            penStore.appendStroke(stroke, ::getOrCreateMesh)
         }
         getOrCreateMesh(stroke)
         isFboDirty = true
@@ -257,9 +263,12 @@ class SketchCanvasRenderer(
 
     fun addCommittedStrokes(strokes: List<Stroke>) {
         if (strokes.isEmpty()) return
-        val (highlighters, inks) = strokes.partition { it.isHighlighter }
+        val highlighters = strokes.filter { it.isHighlighter }
+        val pencils = strokes.filter { !it.isHighlighter && !it.isInk }
+        val pens = strokes.filter { !it.isHighlighter && it.isInk }
         if (highlighters.isNotEmpty()) highlighterStore.appendStrokes(highlighters, ::getOrCreateMesh)
-        if (inks.isNotEmpty()) inkStore.appendStrokes(inks, ::getOrCreateMesh)
+        if (pencils.isNotEmpty()) pencilStore.appendStrokes(pencils, ::getOrCreateMesh)
+        if (pens.isNotEmpty()) penStore.appendStrokes(pens, ::getOrCreateMesh)
         for (s in strokes) {
             getOrCreateMesh(s)
         }
@@ -296,7 +305,8 @@ class SketchCanvasRenderer(
 
     fun removeStrokes(strokeIds: Set<String>) {
         highlighterStore.removeStrokes(strokeIds, ::getOrCreateMesh)
-        inkStore.removeStrokes(strokeIds, ::getOrCreateMesh)
+        pencilStore.removeStrokes(strokeIds, ::getOrCreateMesh)
+        penStore.removeStrokes(strokeIds, ::getOrCreateMesh)
         selectedStrokes.removeAll { it.id in strokeIds }
         selectedStrokeIds.removeAll(strokeIds)
         strokeIds.forEach { meshCache.remove(it) }
@@ -305,10 +315,14 @@ class SketchCanvasRenderer(
 
     fun replaceStrokes(removedIds: Set<String>, added: List<Stroke>) {
         highlighterStore.removeStrokes(removedIds, ::getOrCreateMesh)
-        inkStore.removeStrokes(removedIds, ::getOrCreateMesh)
-        val (highlighters, inks) = added.partition { it.isHighlighter }
+        pencilStore.removeStrokes(removedIds, ::getOrCreateMesh)
+        penStore.removeStrokes(removedIds, ::getOrCreateMesh)
+        val highlighters = added.filter { it.isHighlighter }
+        val pencils = added.filter { !it.isHighlighter && !it.isInk }
+        val pens = added.filter { !it.isHighlighter && it.isInk }
         if (highlighters.isNotEmpty()) highlighterStore.appendStrokes(highlighters, ::getOrCreateMesh)
-        if (inks.isNotEmpty()) inkStore.appendStrokes(inks, ::getOrCreateMesh)
+        if (pencils.isNotEmpty()) pencilStore.appendStrokes(pencils, ::getOrCreateMesh)
+        if (pens.isNotEmpty()) penStore.appendStrokes(pens, ::getOrCreateMesh)
         selectedStrokes.removeAll { it.id in removedIds }
         selectedStrokeIds.removeAll(removedIds)
         removedIds.forEach { meshCache.remove(it) }
@@ -317,7 +331,8 @@ class SketchCanvasRenderer(
 
     fun clearCanvas() {
         highlighterStore.clear()
-        inkStore.clear()
+        pencilStore.clear()
+        penStore.clear()
         images.clear()
         selectedStrokes.clear()
         selectedStrokeIds.clear()
@@ -368,11 +383,11 @@ class SketchCanvasRenderer(
     }
 
     fun getCommittedStrokes(): List<Stroke> {
-        val all = highlighterStore.getAllStrokes() + inkStore.getAllStrokes()
+        val all = highlighterStore.getAllStrokes() + pencilStore.getAllStrokes() + penStore.getAllStrokes()
         return all.sortedBy { it.zIndex }
     }
 
-    fun getMaxStrokeY(): Float = maxOf(highlighterStore.getMaxStrokeY(), inkStore.getMaxStrokeY())
+    fun getMaxStrokeY(): Float = maxOf(highlighterStore.getMaxStrokeY(), maxOf(pencilStore.getMaxStrokeY(), penStore.getMaxStrokeY()))
 
     private fun ensureGlInitialized(width: Int, height: Int) {
         if (!isGlInitialized) {
@@ -630,7 +645,8 @@ class SketchCanvasRenderer(
         shader.use(directScreenMvpMatrix, noiseTextureId)
 
 
-        // 4. Render visible highlighters FIRST so they naturally sit BEHIND ink strokes!
+        // 4. Render visible highlighters FIRST (behind everything)
+        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         highlighterStore.renderVisibleChunks(
             shader,
             visMinX, visMinY, visMaxX, visMaxY,
@@ -638,14 +654,22 @@ class SketchCanvasRenderer(
             ::getOrCreateMesh
         )
 
-        // 4.1. Render visible pen, pencil, and other ink strokes ON TOP of highlighters!
-        // Subtractive multiply on light paper for physical Beer-Lambert dye absorption; additive on dark mode
+        // 4.1. Render visible graphite pencil strokes (standard alpha blending, NO subtractive multiply!)
+        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        pencilStore.renderVisibleChunks(
+            shader,
+            visMinX, visMinY, visMaxX, visMaxY,
+            selectedStrokeIds,
+            ::getOrCreateMesh
+        )
+
+        // 4.2. Render visible fountain pen strokes (subtractive multiply for real wet ink)
         if (isDarkMode) {
             GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         } else {
             GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         }
-        inkStore.renderVisibleChunks(
+        penStore.renderVisibleChunks(
             shader,
             visMinX, visMinY, visMaxX, visMaxY,
             selectedStrokeIds,
@@ -664,17 +688,24 @@ class SketchCanvasRenderer(
             Matrix.multiplyMM(selectionMvpMatrix, 0, screenProjectionMatrix, 0, selectionWorldToViewMatrix, 0)
             shader.invertColors = isDarkMode
             shader.use(selectionMvpMatrix, noiseTextureId)
-            val (selHighlighters, selInks) = selectedStrokes.partition { it.isHighlighter }
+            val selHighlighters = selectedStrokes.filter { it.isHighlighter }
+            val selPencils = selectedStrokes.filter { !it.isHighlighter && !it.isInk }
+            val selPens = selectedStrokes.filter { !it.isHighlighter && it.isInk }
             if (selHighlighters.isNotEmpty()) {
+                GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
                 highlighterStore.renderStrokesDirect(shader, selHighlighters, ::getOrCreateMesh)
             }
-            if (selInks.isNotEmpty()) {
+            if (selPencils.isNotEmpty()) {
+                GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+                pencilStore.renderStrokesDirect(shader, selPencils, ::getOrCreateMesh)
+            }
+            if (selPens.isNotEmpty()) {
                 if (isDarkMode) {
                     GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
                 } else {
                     GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ONE_MINUS_SRC_ALPHA)
                 }
-                inkStore.renderStrokesDirect(shader, selInks, ::getOrCreateMesh)
+                penStore.renderStrokesDirect(shader, selPens, ::getOrCreateMesh)
             }
         }
 
@@ -800,20 +831,29 @@ class SketchCanvasRenderer(
         shader.use(fboMvpMatrix, noiseTextureId)
 
 
-        // Render visible highlighters first, then ink strokes
+        // Render visible highlighters first
+        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         highlighterStore.renderVisibleChunks(
             shader,
             visMinX, visMinY, visMaxX, visMaxY,
             selectedStrokeIds,
             ::getOrCreateMesh
         )
-        // Subtractive multiply on light paper for physical Beer-Lambert dye absorption; additive on dark mode
+        // Render visible graphite pencil strokes (standard alpha blending, NO subtractive multiply!)
+        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        pencilStore.renderVisibleChunks(
+            shader,
+            visMinX, visMinY, visMaxX, visMaxY,
+            selectedStrokeIds,
+            ::getOrCreateMesh
+        )
+        // Render visible fountain pen strokes with subtractive multiply
         if (isDarkMode) {
             GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         } else {
             GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         }
-        inkStore.renderVisibleChunks(
+        penStore.renderVisibleChunks(
             shader,
             visMinX, visMinY, visMaxX, visMaxY,
             selectedStrokeIds,
@@ -982,7 +1022,8 @@ class SketchCanvasRenderer(
             noiseTextureId = 0
         }
         highlighterStore.cleanup()
-        inkStore.cleanup()
+        pencilStore.cleanup()
+        penStore.cleanup()
         imageQuadRenderer.releaseTextures()
         frontBufferDirectByteBuffer = null
         frontBufferFloatBuffer = null
