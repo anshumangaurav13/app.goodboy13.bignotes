@@ -449,6 +449,14 @@
         <input type="range" id="param-multiplyStrength" min="0.0" max="1.0" step="0.05" value="0.85">
       </div>
 
+      <div class="control-group" style="background: rgba(147, 51, 234, 0.12); border-color: rgba(147, 51, 234, 0.3);">
+        <div class="label-row">
+          <span class="label-name" style="color: #c084fc; font-weight:700;">Self-Overlap Darkening (Same Stroke)</span>
+          <span class="label-val" id="val-selfOverlapDarkening">1.10</span>
+        </div>
+        <input type="range" id="param-selfOverlapDarkening" min="0.0" max="2.0" step="0.05" value="1.10">
+      </div>
+
       <div class="control-group">
         <div class="label-row"><span class="label-name">Meniscus Rim (Coffee Ring Darkening)</span><span class="label-val" id="val-meniscusRim">0.38</span></div>
         <input type="range" id="param-meniscusRim" min="0.0" max="0.80" step="0.02" value="0.38">
@@ -577,6 +585,7 @@ const CONFIG = {
 
   // Physical Wet-Ink Optics & Subtractive Multiply
   multiplyStrength: 0.85,
+  selfOverlapDarkening: 1.10,
   fiberFeathering: 0.24,
   meniscusRim: 0.38,
   wetSheen: 0.30,
@@ -599,6 +608,7 @@ const PRESETS = {
     aaWidth: 0.55,
     quadMarginRatio: 0.72,
     multiplyStrength: 0.85,
+    selfOverlapDarkening: 1.10,
     fiberFeathering: 0.24,
     meniscusRim: 0.38,
     wetSheen: 0.30,
@@ -615,6 +625,7 @@ const PRESETS = {
     aaWidth: 0.50,
     quadMarginRatio: 0.68,
     multiplyStrength: 0.60,
+    selfOverlapDarkening: 0.80,
     fiberFeathering: 0.12,
     meniscusRim: 0.20,
     wetSheen: 0.15,
@@ -631,6 +642,7 @@ const PRESETS = {
     aaWidth: 1.5,
     quadMarginRatio: 0.80,
     multiplyStrength: 0.75,
+    selfOverlapDarkening: 1.00,
     fiberFeathering: 0.15,
     meniscusRim: 0.28,
     wetSheen: 0.22,
@@ -647,6 +659,7 @@ const PRESETS = {
     aaWidth: 1.5,
     quadMarginRatio: 1.00,
     multiplyStrength: 0.95,
+    selfOverlapDarkening: 1.30,
     fiberFeathering: 0.28,
     meniscusRim: 0.45,
     wetSheen: 0.35,
@@ -663,6 +676,7 @@ const PRESETS = {
     aaWidth: 0.50,
     quadMarginRatio: 0.68,
     multiplyStrength: 0.0,
+    selfOverlapDarkening: 0.0,
     fiberFeathering: 0.0,
     meniscusRim: 0.0,
     wetSheen: 0.0,
@@ -922,6 +936,8 @@ uniform float u_WetSheen;
 uniform float u_ChromaHalo;
 
 const highp float TEXTURE_SCALE = 0.183;
+// Normalized single-dab density factor so ~10 dabs sum to ~0.45 nominal density
+const highp float DENSITY_SCALE = 0.45;
 
 out vec4 fragColor;
 
@@ -958,7 +974,7 @@ void main() {
     float finalAlpha = 0.0;
     vec3 outRgb = v_color.rgb;
 
-    float coreAlpha = v_color.a * u_InkDilution;
+    float coreAlpha = v_color.a * u_InkDilution * DENSITY_SCALE;
 
     if (distFromNominal <= 0.0) {
         float coreRatio = clamp(perturbedDist / effectiveNominalDist, 0.0, 1.0);
@@ -1009,7 +1025,8 @@ void main() {
         }
     }
 
-    if (finalAlpha <= 0.001) discard;
+    if (finalAlpha <= 0.0001) discard;
+    // Emits color * alpha and alpha for additive mass accumulation
     fragColor = vec4(outRgb * finalAlpha, finalAlpha);
 }
 `;
@@ -1030,6 +1047,7 @@ in vec2 v_uv;
 uniform sampler2D u_PaperTex;
 uniform sampler2D u_StrokeTex;
 uniform float u_MultiplyStrength;
+uniform float u_SelfOverlapDarkening;
 out vec4 fragColor;
 
 void main() {
@@ -1041,14 +1059,19 @@ void main() {
         return;
     }
 
+    // Nominal density baseline (1.0 = single stroke core)
+    float rawDensity = stroke.a / 0.45;
     vec3 strokeRgb = stroke.rgb / max(stroke.a, 1e-4);
 
+    // Intra-stroke crossover power (boosts self-intersections without dark seams on lines)
+    float effectiveD = pow(rawDensity, u_SelfOverlapDarkening);
+
     // 1. Standard Alpha Compositing
-    vec3 normalBlend = stroke.rgb + paper.rgb * (1.0 - stroke.a);
+    vec3 normalBlend = mix(paper.rgb, strokeRgb, clamp(rawDensity, 0.0, 1.0));
 
     // 2. Subtractive Dye Multiply (Beer-Lambert Law)
-    vec3 dyeTransmission = vec3(1.0) - stroke.a * (vec3(1.0) - strokeRgb);
-    vec3 multiplyBlend = paper.rgb * dyeTransmission;
+    vec3 transmission = pow(clamp(strokeRgb, 0.005, 1.0), vec3(effectiveD * u_MultiplyStrength));
+    vec3 multiplyBlend = paper.rgb * transmission;
 
     vec3 finalRgb = mix(normalBlend, multiplyBlend, u_MultiplyStrength);
     fragColor = vec4(finalRgb, 1.0);
@@ -1063,11 +1086,13 @@ const gl = canvas.getContext("webgl2", { alpha: false, antialias: false, powerPr
 
 if (!gl) alert("WebGL 2 not supported!");
 
+const hasFloatBuffer = !!gl.getExtension("EXT_color_buffer_float");
+
 let strokeProgram, compositeProgram, toothTexture;
 let uMvpLoc, uBleedRatioLoc, uBleedPowerLoc, uCoreShiftRatioLoc, uBleedBaseOpacityLoc;
 let uAaWidthLoc, uPaperGrainMixLoc, uInkDilutionLoc, uFiberFeatheringLoc, uMeniscusRimLoc;
 let uWetSheenLoc, uChromaHaloLoc;
-let compPaperLoc, compStrokeLoc, compMultiplyLoc;
+let compPaperLoc, compStrokeLoc, compMultiplyLoc, compSelfOverlapLoc;
 
 const FLOATS_PER_VERTEX = 10;
 const STRIDE_BYTES = FLOATS_PER_VERTEX * 4;
@@ -1120,6 +1145,7 @@ function initPrograms() {
   compPaperLoc = gl.getUniformLocation(compositeProgram, "u_PaperTex");
   compStrokeLoc = gl.getUniformLocation(compositeProgram, "u_StrokeTex");
   compMultiplyLoc = gl.getUniformLocation(compositeProgram, "u_MultiplyStrength");
+  compSelfOverlapLoc = gl.getUniformLocation(compositeProgram, "u_SelfOverlapDarkening");
 
   toothTexture = createPaperNoiseTexture(gl);
 }
@@ -1130,11 +1156,17 @@ let activePaperIdx = 0;
 let strokeLayer = null;
 let fboW = 0, fboH = 0;
 
-function createFbo(w, h) {
+function createFbo(w, h, useFloat = false) {
   const fbo = gl.createFramebuffer();
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+  if (useFloat && hasFloatBuffer) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  } else {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  }
+
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -1187,14 +1219,15 @@ function resizeFbos() {
       gl.deleteTexture(paperFbos[i].tex);
       gl.deleteFramebuffer(paperFbos[i].fbo);
     }
-    paperFbos[i] = createFbo(w, h);
+    paperFbos[i] = createFbo(w, h, false);
   }
 
   if (strokeLayer) {
     gl.deleteTexture(strokeLayer.tex);
     gl.deleteFramebuffer(strokeLayer.fbo);
   }
-  strokeLayer = createFbo(w, h);
+  // Scratch stroke layer uses float buffer to avoid clamping density at self-intersections
+  strokeLayer = createFbo(w, h, true);
 
   replayAllStrokes();
 }
@@ -1291,6 +1324,7 @@ function compositeLayers(targetFbo) {
   gl.uniform1i(compStrokeLoc, 1);
 
   gl.uniform1f(compMultiplyLoc, CONFIG.multiplyStrength);
+  gl.uniform1f(compSelfOverlapLoc, CONFIG.selfOverlapDarkening);
 
   gl.disable(gl.BLEND);
 
@@ -1304,7 +1338,6 @@ function compositeLayers(targetFbo) {
 // Safely ping-pongs the committed FBO with the finished scratch stroke
 function commitActiveStrokeToPaper() {
   const nextIdx = 1 - activePaperIdx;
-  // Blend activePaper + scratchStroke -> nextPaper
   compositeLayers(paperFbos[nextIdx].fbo);
   activePaperIdx = nextIdx;
 
@@ -1330,7 +1363,9 @@ function renderIncrementalDabs(dabs) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, strokeLayer.fbo);
   gl.viewport(0, 0, fboW, fboH);
   gl.enable(gl.BLEND);
-  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+  // Additive pigment density accumulation (crucial for same-stroke self-intersections!)
+  gl.blendFunc(gl.ONE, gl.ONE);
 
   applyStrokeUniforms();
 
@@ -1375,7 +1410,7 @@ function replayAllStrokes() {
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.blendFunc(gl.ONE, gl.ONE); // Additive accumulation
 
       applyStrokeUniforms();
 
@@ -1531,6 +1566,7 @@ function bindSlider(id, key, suffix = "", transform = (v) => parseFloat(v)) {
 }
 
 bindSlider("multiplyStrength", "multiplyStrength");
+bindSlider("selfOverlapDarkening", "selfOverlapDarkening");
 bindSlider("meniscusRim", "meniscusRim");
 bindSlider("fiberFeathering", "fiberFeathering");
 bindSlider("wetSheen", "wetSheen");
@@ -1629,6 +1665,7 @@ val inkBleedConfig = InkBleedConfig(
 
 // Physical Wet-Ink Optics & Subtractive Multiply:
 // SUBTRACTIVE_MULTIPLY = ${CONFIG.multiplyStrength.toFixed(2)}
+// SELF_OVERLAP_DARKENING = ${CONFIG.selfOverlapDarkening.toFixed(2)}
 // MENISCUS_RIM = ${CONFIG.meniscusRim.toFixed(2)}
 // FIBER_FEATHERING = ${CONFIG.fiberFeathering.toFixed(2)}
 // WET_SHEEN = ${CONFIG.wetSheen.toFixed(2)}
