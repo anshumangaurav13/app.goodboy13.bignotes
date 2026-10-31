@@ -148,7 +148,7 @@ object StrokeTessellator {
         PencilTone.LIGHT -> QuadColor(1.0f, 0.99f, 0.96f, 0.85f) // #FFFDF5 subtle parchment highlight
         PencilTone.INK_BLACK -> QuadColor(0.0f, 0.0f, 0.0f, 1.0f) // #121417 solid rich carbon black
         PencilTone.INK_BLUE -> QuadColor(0.06f, 0.16f, 0.38f, 1.0f) // #0F2961 solid deep navy blue
-        PencilTone.INK_RED -> QuadColor(0.48f, 0.08f, 0.12f, 1.0f) // #7A141F solid deep oxblood red
+        PencilTone.INK_RED -> QuadColor(0.86f, 0.15f, 0.15f, 1.0f) // #7A141F solid deep oxblood red
     }
 
     /**

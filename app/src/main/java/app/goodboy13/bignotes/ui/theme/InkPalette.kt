@@ -21,10 +21,10 @@ object InkPalette {
     private val StandardInkColors = listOf(
         InkColorItem(0, "Ink Black", Color(0xFF000000)),
         InkColorItem(1, "Slate", Color(0xFF475569)),
-        InkColorItem(2, "Crimson", Color(0xFFB91C1C)),
+        InkColorItem(2, "Crimson", Color(0xFFDC2626)),
         InkColorItem(3, "Royal Blue", Color(0xFF1D4ED8)),
-        InkColorItem(4, "Emerald", Color(0xFF047857)),
-        InkColorItem(5, "Amber", Color(0xFFB45309))
+        InkColorItem(4, "Emerald", Color(0xFF059669)),
+        InkColorItem(5, "Amber", Color(0xFFD97706))
     )
 
     private fun hlItem(slot: Int, name: String, color: Color): InkColorItem {
