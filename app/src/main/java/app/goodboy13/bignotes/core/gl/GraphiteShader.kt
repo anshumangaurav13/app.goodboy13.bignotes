@@ -32,7 +32,7 @@ class GraphiteShader(private val context: Context) {
     var bleedBaseOpacity: Float = 0.36f
     var aaWidth: Float = 0.55f
     var paperGrainMix: Float = 0.60f
-    var inkDilution: Float = 0.06f
+    var inkDilution: Float = 0.10f
     var fiberFeathering: Float = 0.60f
     var meniscusRim: Float = 0.38f
     var wetSheen: Float = 0.80f

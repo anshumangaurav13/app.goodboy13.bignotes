@@ -463,114 +463,28 @@ class SketchCanvasRenderer(
 
     // --- GLFrontBufferedRenderer.Callback Implementation ---
 
-    override fun onDrawFrontBufferedLayer(
-        eglManager: EGLManager,
-        width: Int,
-        height: Int,
-        bufferInfo: BufferInfo,
-        transform: FloatArray,
-        param: FrontBufferPacket
+    private fun renderSceneBackground(
+        width: Float,
+        bufferWidth: Int,
+        bufferHeight: Int,
+        mvpMatrix: FloatArray,
+        worldToViewMatrix: FloatArray
     ) {
-        currentViewWidth = width.toFloat()
-        ensureGlInitialized(width, height)
-
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, bufferInfo.frameBufferId)
-        GLES30.glViewport(0, 0, bufferInfo.width, bufferInfo.height)
-
-        if (param.clearBeforeDraw) {
-            GLES30.glClearColor(0.0f, 0.0f, 0.0f, 0.0f)
-            GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-        }
-        if (param.dabs.isEmpty()) return
-
-        GLES30.glEnable(GLES30.GL_BLEND)
-        // Premultiplied alpha: writes stroke alpha to front buffer for SurfaceFlinger compositor
-        GLES30.glBlendFuncSeparate(
-            GLES30.GL_ONE,
-            GLES30.GL_ONE_MINUS_SRC_ALPHA,
-            GLES30.GL_ONE,
-            GLES30.GL_ONE_MINUS_SRC_ALPHA
-        )
-
-        val shader = graphiteShader ?: return
-
-        // 1. screenOrthoMatrix: maps buffer pixels [0..bufW, 0..bufH] to buffer NDC [-1, 1]
-        Matrix.orthoM(screenOrthoMatrix, 0, 0f, bufferInfo.width.toFloat(), 0f, bufferInfo.height.toFloat(), -1f, 1f)
-        // 2. screenProjectionMatrix: maps view pixels -> buffer pixels -> buffer NDC
-        Matrix.multiplyMM(screenProjectionMatrix, 0, screenOrthoMatrix, 0, transform, 0)
-
-        // 3. currentWorldToViewMatrix: maps canvas world coordinates -> view pixels
-        computeWorldToViewMatrix(
-            currentWorldToViewMatrix,
-            width.toFloat(),
-            panX, panY, zoomScale, rotationDegrees, isFlippedHorizontal
-        )
-
-        // 4. Final MVP: world coordinates -> view pixels -> buffer NDC
-        Matrix.multiplyMM(frontBufferMvpMatrix, 0, screenProjectionMatrix, 0, currentWorldToViewMatrix, 0)
-
-        shader.invertColors = isDarkMode
-        shader.use(frontBufferMvpMatrix, noiseTextureId)
-
-        val targetBuf = getFrontBuffer(param.dabs.size * 6)
-        val mesh = StrokeTessellator.tessellateDabs(
-            param.dabs,
-            currentTone,
-            currentBaseWidth,
-            targetBuf,
-            colorRgb = currentColorRgb,
-            isInk = isCurrentInk,
-            isHighlighter = isCurrentHighlighter
-        )
-        shader.renderMesh(mesh.vertexBuffer, mesh.vertexCount)
-    }
-
-    override fun onDrawMultiBufferedLayer(
-        eglManager: EGLManager,
-        width: Int,
-        height: Int,
-        bufferInfo: BufferInfo,
-        transform: FloatArray,
-        params: Collection<FrontBufferPacket>
-    ) {
-        currentViewWidth = width.toFloat()
-        ensureGlInitialized(width, height)
-
-        val shader = graphiteShader ?: return
-
-        // 1. Direct bind to target screen buffer (SurfaceFlinger front-buffered swapchain)
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, bufferInfo.frameBufferId)
-        GLES30.glViewport(0, 0, bufferInfo.width, bufferInfo.height)
-
         // Clear target surface to current PaperColor
         GLES30.glClearColor(paperColor.r, paperColor.g, paperColor.b, paperColor.a)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
 
-        // 2. Compute screen projection & world-to-view matrices
-        // screenOrthoMatrix: maps buffer pixels [0..bufW, 0..bufH] to buffer NDC [-1, 1]
-        Matrix.orthoM(screenOrthoMatrix, 0, 0f, bufferInfo.width.toFloat(), 0f, bufferInfo.height.toFloat(), -1f, 1f)
-        // screenProjectionMatrix: maps view pixels -> buffer pixels -> buffer NDC
-        Matrix.multiplyMM(screenProjectionMatrix, 0, screenOrthoMatrix, 0, transform, 0)
+        val shader = graphiteShader ?: return
 
-        // currentWorldToViewMatrix: maps canvas world coordinates -> view pixels
-        computeWorldToViewMatrix(
-            currentWorldToViewMatrix,
-            width.toFloat(),
-            panX, panY, zoomScale, rotationDegrees, isFlippedHorizontal
-        )
-
-        // directScreenMvpMatrix: maps canvas world coordinates -> view pixels -> buffer NDC
-        Matrix.multiplyMM(directScreenMvpMatrix, 0, screenProjectionMatrix, 0, currentWorldToViewMatrix, 0)
-
-        // 3. Viewport AABB Frustum Culling (only visible chunks are drawn)
+        // Viewport AABB Frustum Culling (only visible chunks are drawn)
         var visMinX = Float.POSITIVE_INFINITY
         var visMinY = Float.POSITIVE_INFINITY
         var visMaxX = Float.NEGATIVE_INFINITY
         var visMaxY = Float.NEGATIVE_INFINITY
 
-        if (Matrix.invertM(invWorldToViewMatrix, 0, currentWorldToViewMatrix, 0)) {
-            val w = width.toFloat()
-            val h = height.toFloat()
+        if (Matrix.invertM(invWorldToViewMatrix, 0, worldToViewMatrix, 0)) {
+            val w = width
+            val h = bufferHeight.toFloat()
             corners[0] = 0f; corners[1] = 0f
             corners[2] = w; corners[3] = 0f
             corners[4] = w; corners[5] = h
@@ -607,7 +521,7 @@ class SketchCanvasRenderer(
 
         // 3.4 Render procedural background grid (Dots or Squares)
         if (gridConfig.enabled) {
-            if (Matrix.invertM(invDirectScreenMvpMatrix, 0, directScreenMvpMatrix, 0)) {
+            if (Matrix.invertM(invDirectScreenMvpMatrix, 0, mvpMatrix, 0)) {
                 gridRenderer.draw(
                     invDirectScreenMvpMatrix,
                     paperColor,
@@ -620,7 +534,7 @@ class SketchCanvasRenderer(
         // 3.5 Render page separator lines beneath strokes with zero latency
         if (showPageSeparators) {
             pageSeparatorRenderer.draw(
-                directScreenMvpMatrix,
+                mvpMatrix,
                 visMinY, visMaxY,
                 paperColor,
                 basePageWidth,
@@ -636,14 +550,12 @@ class SketchCanvasRenderer(
                 img.centerX + halfW >= visMinX && img.centerX - halfW <= visMaxX &&
                 img.centerY + halfH >= visMinY && img.centerY - halfH <= visMaxY
             }.sortedBy { it.zIndex }
-            imageQuadRenderer.render(visibleImages, directScreenMvpMatrix, context)
+            imageQuadRenderer.render(visibleImages, mvpMatrix, context)
         }
 
         GLES30.glEnable(GLES30.GL_BLEND)
-        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         shader.invertColors = isDarkMode
-        shader.use(directScreenMvpMatrix, noiseTextureId)
-
+        shader.use(mvpMatrix, noiseTextureId)
 
         // 4. Render visible highlighters FIRST (behind everything)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
@@ -674,6 +586,119 @@ class SketchCanvasRenderer(
             visMinX, visMinY, visMaxX, visMaxY,
             selectedStrokeIds,
             ::getOrCreateMesh
+        )
+    }
+
+    override fun onDrawFrontBufferedLayer(
+        eglManager: EGLManager,
+        width: Int,
+        height: Int,
+        bufferInfo: BufferInfo,
+        transform: FloatArray,
+        param: FrontBufferPacket
+    ) {
+        currentViewWidth = width.toFloat()
+        ensureGlInitialized(width, height)
+
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, bufferInfo.frameBufferId)
+        GLES30.glViewport(0, 0, bufferInfo.width, bufferInfo.height)
+
+        // 1. screenOrthoMatrix: maps buffer pixels [0..bufW, 0..bufH] to buffer NDC [-1, 1]
+        Matrix.orthoM(screenOrthoMatrix, 0, 0f, bufferInfo.width.toFloat(), 0f, bufferInfo.height.toFloat(), -1f, 1f)
+        // 2. screenProjectionMatrix: maps view pixels -> buffer pixels -> buffer NDC
+        Matrix.multiplyMM(screenProjectionMatrix, 0, screenOrthoMatrix, 0, transform, 0)
+
+        // 3. currentWorldToViewMatrix: maps canvas world coordinates -> view pixels
+        computeWorldToViewMatrix(
+            currentWorldToViewMatrix,
+            width.toFloat(),
+            panX, panY, zoomScale, rotationDegrees, isFlippedHorizontal
+        )
+
+        // 4. Final MVP: world coordinates -> view pixels -> buffer NDC
+        Matrix.multiplyMM(frontBufferMvpMatrix, 0, screenProjectionMatrix, 0, currentWorldToViewMatrix, 0)
+
+        if (param.clearBeforeDraw) {
+            if (param.dabs.isEmpty()) {
+                GLES30.glClearColor(0.0f, 0.0f, 0.0f, 0.0f)
+                GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+                return
+            }
+            // Prime the front buffer with paper, grid, images, and committed strokes
+            renderSceneBackground(
+                width.toFloat(),
+                bufferInfo.width,
+                bufferInfo.height,
+                frontBufferMvpMatrix,
+                currentWorldToViewMatrix
+            )
+        }
+        if (param.dabs.isEmpty()) return
+
+        val shader = graphiteShader ?: return
+
+        GLES30.glEnable(GLES30.GL_BLEND)
+        if (isCurrentInk) {
+            if (isDarkMode) {
+                GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+            } else {
+                GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+            }
+        } else {
+            GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        }
+
+        shader.invertColors = isDarkMode
+        shader.use(frontBufferMvpMatrix, noiseTextureId)
+
+        val targetBuf = getFrontBuffer(param.dabs.size * 6)
+        val mesh = StrokeTessellator.tessellateDabs(
+            param.dabs,
+            currentTone,
+            currentBaseWidth,
+            targetBuf,
+            colorRgb = currentColorRgb,
+            isInk = isCurrentInk,
+            isHighlighter = isCurrentHighlighter
+        )
+        shader.renderMesh(mesh.vertexBuffer, mesh.vertexCount)
+    }
+
+    override fun onDrawMultiBufferedLayer(
+        eglManager: EGLManager,
+        width: Int,
+        height: Int,
+        bufferInfo: BufferInfo,
+        transform: FloatArray,
+        params: Collection<FrontBufferPacket>
+    ) {
+        currentViewWidth = width.toFloat()
+        ensureGlInitialized(width, height)
+
+        val shader = graphiteShader ?: return
+
+        // 1. Direct bind to target screen buffer (SurfaceFlinger front-buffered swapchain)
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, bufferInfo.frameBufferId)
+        GLES30.glViewport(0, 0, bufferInfo.width, bufferInfo.height)
+
+        // 2. Compute screen projection & world-to-view matrices
+        Matrix.orthoM(screenOrthoMatrix, 0, 0f, bufferInfo.width.toFloat(), 0f, bufferInfo.height.toFloat(), -1f, 1f)
+        Matrix.multiplyMM(screenProjectionMatrix, 0, screenOrthoMatrix, 0, transform, 0)
+
+        computeWorldToViewMatrix(
+            currentWorldToViewMatrix,
+            width.toFloat(),
+            panX, panY, zoomScale, rotationDegrees, isFlippedHorizontal
+        )
+
+        Matrix.multiplyMM(directScreenMvpMatrix, 0, screenProjectionMatrix, 0, currentWorldToViewMatrix, 0)
+
+        renderSceneBackground(
+            width.toFloat(),
+            bufferInfo.width,
+            bufferInfo.height,
+            directScreenMvpMatrix,
+            currentWorldToViewMatrix
         )
 
         // 5. Render lasso-selected strokes directly with real-time translation offset
