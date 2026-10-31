@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg-surface: #18181b;
-    --panel-bg: rgba(24, 24, 27, 0.92);
+    --panel-bg: rgba(24, 24, 27, 0.94);
     --border-color: rgba(255, 255, 255, 0.12);
     --accent: #3b82f6;
     --accent-hover: #2563eb;
@@ -1047,7 +1047,6 @@ void main() {
     vec3 normalBlend = stroke.rgb + paper.rgb * (1.0 - stroke.a);
 
     // 2. Subtractive Dye Multiply (Beer-Lambert Law)
-    // Dye transmission: filter out light proportional to alpha and pigment color
     vec3 dyeTransmission = vec3(1.0) - stroke.a * (vec3(1.0) - strokeRgb);
     vec3 multiplyBlend = paper.rgb * dyeTransmission;
 
@@ -1057,7 +1056,7 @@ void main() {
 `;
 
 // ==========================================
-// 5. HIGH-PERFORMANCE ZERO-LATENCY ENGINE
+// 5. PING-PONG ZERO-LATENCY ENGINE
 // ==========================================
 const canvas = document.getElementById("glcanvas");
 const gl = canvas.getContext("webgl2", { alpha: false, antialias: false, powerPreference: "high-performance" });
@@ -1085,7 +1084,6 @@ function compile(type, src) {
 }
 
 function initPrograms() {
-  // 1. Stroke Shader
   const sVS = compile(gl.VERTEX_SHADER, STROKE_VS);
   const sFS = compile(gl.FRAGMENT_SHADER, STROKE_FS);
   strokeProgram = gl.createProgram();
@@ -1111,7 +1109,6 @@ function initPrograms() {
   uWetSheenLoc = gl.getUniformLocation(strokeProgram, "u_WetSheen");
   uChromaHaloLoc = gl.getUniformLocation(strokeProgram, "u_ChromaHalo");
 
-  // 2. Composite Shader
   const cVS = compile(gl.VERTEX_SHADER, COMPOSITE_VS);
   const cFS = compile(gl.FRAGMENT_SHADER, COMPOSITE_FS);
   compositeProgram = gl.createProgram();
@@ -1127,9 +1124,10 @@ function initPrograms() {
   toothTexture = createPaperNoiseTexture(gl);
 }
 
-// Framebuffers for Zero-Latency Dual-Layer Compositing
-let committedFbo = null, committedTex = null;
-let strokeFbo = null, strokeTex = null;
+// Ping-Pong FBOs for Committed Paper Layer + Scratch FBO for Active Stroke
+let paperFbos = [null, null];
+let activePaperIdx = 0;
+let strokeLayer = null;
 let fboW = 0, fboH = 0;
 
 function createFbo(w, h) {
@@ -1137,6 +1135,8 @@ function createFbo(w, h) {
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
@@ -1154,14 +1154,21 @@ function parseHex(hex) {
 
 function clearPaperLayer() {
   const [pr, pg, pb] = parseHex(CONFIG.paperColor);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, committedFbo);
-  gl.viewport(0, 0, fboW, fboH);
-  gl.clearColor(pr, pg, pb, 1.0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  for (let i = 0; i < 2; i++) {
+    if (paperFbos[i]) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, paperFbos[i].fbo);
+      gl.viewport(0, 0, fboW, fboH);
+      gl.clearColor(pr, pg, pb, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+  }
 
-  gl.bindFramebuffer(gl.FRAMEBUFFER, strokeFbo);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  if (strokeLayer) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, strokeLayer.fbo);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+  activePaperIdx = 0;
 }
 
 function resizeFbos() {
@@ -1175,18 +1182,19 @@ function resizeFbos() {
   canvas.width = w;
   canvas.height = h;
 
-  if (committedTex) gl.deleteTexture(committedTex);
-  if (committedFbo) gl.deleteFramebuffer(committedFbo);
-  if (strokeTex) gl.deleteTexture(strokeTex);
-  if (strokeFbo) gl.deleteFramebuffer(strokeFbo);
+  for (let i = 0; i < 2; i++) {
+    if (paperFbos[i]) {
+      gl.deleteTexture(paperFbos[i].tex);
+      gl.deleteFramebuffer(paperFbos[i].fbo);
+    }
+    paperFbos[i] = createFbo(w, h);
+  }
 
-  const cf = createFbo(w, h);
-  committedFbo = cf.fbo;
-  committedTex = cf.tex;
-
-  const sf = createFbo(w, h);
-  strokeFbo = sf.fbo;
-  strokeTex = sf.tex;
+  if (strokeLayer) {
+    gl.deleteTexture(strokeLayer.tex);
+    gl.deleteFramebuffer(strokeLayer.fbo);
+  }
+  strokeLayer = createFbo(w, h);
 
   replayAllStrokes();
 }
@@ -1268,18 +1276,18 @@ function tessellateDabs(dabs, color, config) {
   return out;
 }
 
-// Blit committed layer + active stroke to screen
-function blitToScreen(targetFbo = null) {
+// Composite paper layer + active scratch stroke into target FBO (or null for screen)
+function compositeLayers(targetFbo) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, targetFbo);
   gl.viewport(0, 0, fboW, fboH);
   gl.useProgram(compositeProgram);
 
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, committedTex);
+  gl.bindTexture(gl.TEXTURE_2D, paperFbos[activePaperIdx].tex);
   gl.uniform1i(compPaperLoc, 0);
 
   gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, strokeTex);
+  gl.bindTexture(gl.TEXTURE_2D, strokeLayer.tex);
   gl.uniform1i(compStrokeLoc, 1);
 
   gl.uniform1f(compMultiplyLoc, CONFIG.multiplyStrength);
@@ -1293,31 +1301,33 @@ function blitToScreen(targetFbo = null) {
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
-// Bakes the current active stroke into the committed paper layer via Subtractive Multiply
+// Safely ping-pongs the committed FBO with the finished scratch stroke
 function commitActiveStrokeToPaper() {
-  // Render composite into a temp copy or directly
-  blitToScreen(committedFbo);
+  const nextIdx = 1 - activePaperIdx;
+  // Blend activePaper + scratchStroke -> nextPaper
+  compositeLayers(paperFbos[nextIdx].fbo);
+  activePaperIdx = nextIdx;
 
   // Clear scratch stroke FBO
-  gl.bindFramebuffer(gl.FRAMEBUFFER, strokeFbo);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, strokeLayer.fbo);
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
 
-  blitToScreen(null);
+  // Present to screen
+  compositeLayers(null);
 }
 
 // Stroke history for replay upon slider tweaking & undo
 const strokes = [];
 let activePoints = [];
 let liveDabGen = null;
-let rafScheduled = false;
 
 function renderIncrementalDabs(dabs) {
   if (!dabs || dabs.length === 0) return;
   const verts = tessellateDabs(dabs, CONFIG.color, CONFIG);
   if (!verts) return;
 
-  gl.bindFramebuffer(gl.FRAMEBUFFER, strokeFbo);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, strokeLayer.fbo);
   gl.viewport(0, 0, fboW, fboH);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -1341,13 +1351,8 @@ function renderIncrementalDabs(dabs) {
 
   gl.drawArrays(gl.TRIANGLES, 0, verts.length / FLOATS_PER_VERTEX);
 
-  if (!rafScheduled) {
-    rafScheduled = true;
-    requestAnimationFrame(() => {
-      blitToScreen(null);
-      rafScheduled = false;
-    });
-  }
+  // Present composite live to screen
+  compositeLayers(null);
 }
 
 function replayAllStrokes() {
@@ -1364,8 +1369,11 @@ function replayAllStrokes() {
     }
     const verts = tessellateDabs(dabs, s.color, CONFIG);
     if (verts) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, strokeFbo);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, strokeLayer.fbo);
       gl.viewport(0, 0, fboW, fboH);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
@@ -1388,11 +1396,18 @@ function replayAllStrokes() {
 
       gl.drawArrays(gl.TRIANGLES, 0, verts.length / FLOATS_PER_VERTEX);
 
-      commitActiveStrokeToPaper();
+      const nextIdx = 1 - activePaperIdx;
+      compositeLayers(paperFbos[nextIdx].fbo);
+      activePaperIdx = nextIdx;
     }
   }
 
-  blitToScreen(null);
+  // Clear scratch stroke FBO
+  gl.bindFramebuffer(gl.FRAMEBUFFER, strokeLayer.fbo);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  compositeLayers(null);
 }
 
 // ==========================================
@@ -1463,12 +1478,17 @@ function finishStroke(e) {
   isDrawing = false;
   hudDot.className = "hud-dot";
 
-  if (activePoints.length > 1) {
+  if (activePoints.length >= 1) {
     strokes.push({
       points: activePoints.slice(),
       color: CONFIG.color.slice()
     });
     commitActiveStrokeToPaper();
+  } else {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, strokeLayer.fbo);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    compositeLayers(null);
   }
   activePoints = [];
   liveDabGen = null;
@@ -1591,7 +1611,7 @@ document.getElementById("btn-undo").addEventListener("click", () => {
 document.getElementById("btn-clear").addEventListener("click", () => {
   strokes.length = 0;
   clearPaperLayer();
-  blitToScreen(null);
+  compositeLayers(null);
 });
 
 // Copy Config
