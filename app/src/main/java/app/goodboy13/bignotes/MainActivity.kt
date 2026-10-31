@@ -1269,8 +1269,8 @@ fun BigNotesMainScreen(
                         }
                     }
                     selectedFolderId = folderId
-                    val firstNoteInFolder = allNotes.firstOrNull { it.folderId == folderId }
-                    selectedNoteId = firstNoteInFolder?.id
+                    val topmostNote = allNotes.filter { it.folderId == folderId }.sortedWithOrder(noteSortOrder).firstOrNull()
+                    selectedNoteId = topmostNote?.id
                 },
                 onFolderDelete = { folderId ->
                     val notesToDelete = allNotes.filter { it.folderId == folderId }
@@ -1286,7 +1286,7 @@ fun BigNotesMainScreen(
                     allNotes = allNotes.filter { it.folderId != folderId }
                     if (selectedFolderId == folderId) {
                         selectedFolderId = folders.firstOrNull()?.id
-                        selectedNoteId = allNotes.firstOrNull { it.folderId == selectedFolderId }?.id
+                        selectedNoteId = allNotes.filter { it.folderId == selectedFolderId }.sortedWithOrder(noteSortOrder).firstOrNull()?.id
                     }
                     hasUnsavedChangesSinceLastSnapshot = true
                 },
@@ -1319,7 +1319,7 @@ fun BigNotesMainScreen(
                     val deletedNote = allNotes.find { it.id == noteId }
                     allNotes = allNotes.filter { it.id != noteId }
                     if (selectedNoteId == noteId) {
-                        val remainingInFolder = allNotes.filter { it.folderId == selectedFolderId }
+                        val remainingInFolder = allNotes.filter { it.folderId == selectedFolderId }.sortedWithOrder(noteSortOrder)
                         selectedNoteId = remainingInFolder.firstOrNull()?.id
                     }
                     if (deletedNote != null) {

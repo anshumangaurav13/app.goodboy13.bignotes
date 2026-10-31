@@ -76,8 +76,8 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Google ML Kit Digital Ink Recognition (offline handwriting recognition)
-    implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
+    // Google ML Kit Digital Ink Recognition (offline handwriting recognition, 16 KB page-size aligned)
+    implementation("com.google.mlkit:digital-ink-recognition:19.0.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
