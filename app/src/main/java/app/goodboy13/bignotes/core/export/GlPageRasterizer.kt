@@ -109,6 +109,11 @@ class GlPageRasterizer(private val context: Context) : AutoCloseable {
         s.bleedBaseOpacity = InkBleedConfig.DEFAULT.bleedBaseOpacity
         s.aaWidth = InkBleedConfig.DEFAULT.aaWidth
         s.paperGrainMix = InkBleedConfig.DEFAULT.paperGrainMix
+        s.inkDilution = InkBleedConfig.DEFAULT.inkDilution
+        s.fiberFeathering = InkBleedConfig.DEFAULT.fiberFeathering
+        s.meniscusRim = InkBleedConfig.DEFAULT.meniscusRim
+        s.wetSheen = InkBleedConfig.DEFAULT.wetSheen
+        s.chromaHalo = InkBleedConfig.DEFAULT.chromaHalo
         shader = s
 
         noiseTextureId = NoiseTextureGenerator.createPaperToothTexture()

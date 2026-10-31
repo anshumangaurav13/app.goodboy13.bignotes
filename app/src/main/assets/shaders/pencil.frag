@@ -16,8 +16,12 @@ uniform float u_AaWidth;
 uniform float u_PaperGrainMix;
 uniform int u_InvertColors;
 
-// Hardcoded Wet Ink Simulation Constant (Dilution = 10%)
-const highp float INK_DILUTION = 0.10;
+// Physical Wet Ink Simulation Parameters
+uniform float u_InkDilution;
+uniform float u_FiberFeathering;
+uniform float u_MeniscusRim;
+uniform float u_WetSheen;
+uniform float u_ChromaHalo;
 
 // Finalized Paper Tooth Shader Constants (Velvet Soft)
 const highp float TEXTURE_SCALE = 0.183;
@@ -26,6 +30,14 @@ const highp float TOOTH_BITE = 0.72;
 const highp float DUAL_SAMPLE_MIX = 0.26;
 
 out vec4 fragColor;
+
+vec3 getUndertone(vec3 base) {
+    float maxC = max(base.r, max(base.g, base.b));
+    if (maxC < 0.2) return vec3(0.08, 0.14, 0.28);
+    if (base.b > base.r && base.b > base.g) return vec3(0.0, 0.45, 0.70);
+    if (base.r > base.b) return vec3(0.75, 0.30, 0.05);
+    return base * 1.2;
+}
 
 void main() {
     // 1. Screen-space pixel derivatives of dab normal (evaluated uniformly across fragment quad)
@@ -80,14 +92,31 @@ void main() {
         float coreShiftDist = nominalDist * u_CoreShiftRatio;
         float effectiveNominalDist = clamp(nominalDist + coreShiftDist, 0.01, 0.98);
 
-        float distFromNominal = dist - effectiveNominalDist;
+        // 1. Fiber Feathering along paper grain
+        vec2 tc1 = v_worldPos * TEXTURE_SCALE;
+        float paperGrain = texture(u_ToothTexture, tc1).r;
+        float fiberPerturb = (paperGrain - 0.5) * u_FiberFeathering * effectiveNominalDist;
+        float perturbedDist = dist + fiberPerturb;
 
-        // Hardcoded wet ink dilution (10% single-pass pigment)
-        float coreAlpha = v_color.a * INK_DILUTION;
+        float distFromNominal = perturbedDist - effectiveNominalDist;
+
+        // Tunable wet ink dilution
+        float coreAlpha = v_color.a * u_InkDilution;
 
         if (distFromNominal <= 0.0) {
             // Inside nominal core
-            finalAlpha = coreAlpha;
+            float coreRatio = clamp(perturbedDist / effectiveNominalDist, 0.0, 1.0);
+
+            // Meniscus surface-tension rim darkening (Coffee-ring effect)
+            float rimDarkening = smoothstep(0.65, 0.98, coreRatio) * u_MeniscusRim;
+            finalAlpha = coreAlpha * (1.0 + rimDarkening * 0.55);
+            outRgb = mix(outRgb, outRgb * 0.70, rimDarkening * 0.40);
+
+            // Wet liquid specular sheen along centerline
+            if (u_WetSheen > 0.001) {
+                float sheen = pow(max(1.0 - coreRatio, 0.0), 3.0) * u_WetSheen;
+                outRgb = mix(outRgb, vec3(1.0), sheen * 0.35);
+            }
         } else {
             // Relative bleed width: fraction of nominal stroke radius
             float maxBleed = max(1.0 - effectiveNominalDist - safeDelta * 0.5, 1e-4);
@@ -98,7 +127,7 @@ void main() {
 
             if (bleedWidth <= aaBand * 0.5) {
                 // Virtually zero bleed: crisp analytical sub-pixel edge anti-aliasing
-                float t = clamp((effectiveNominalDist - dist) / aaBand + 1.0, 0.0, 1.0);
+                float t = clamp((effectiveNominalDist - perturbedDist) / aaBand + 1.0, 0.0, 1.0);
                 float smoothAa = t * t * (3.0 - 2.0 * t);
                 finalAlpha = coreAlpha * smoothAa;
             } else {
@@ -114,12 +143,16 @@ void main() {
                     float aaEdge = clamp(distFromBleedEdge / aaBand, 0.0, 1.0);
                     float smoothAa = aaEdge * aaEdge * (3.0 - 2.0 * aaEdge);
 
-                    // Optional paper tooth grain mix
+                    // Paper tooth grain mix
                     if (u_PaperGrainMix > 0.001) {
-                        vec2 tc1 = v_worldPos * TEXTURE_SCALE;
-                        float grain = texture(u_ToothTexture, tc1).r;
-                        float toothFactor = mix(1.0, smoothstep(0.2, 0.8, grain), u_PaperGrainMix);
+                        float toothFactor = mix(1.0, smoothstep(0.2, 0.8, paperGrain), u_PaperGrainMix);
                         bleedFalloff *= toothFactor;
+                    }
+
+                    // Chromatographic dye separation halo at fringe
+                    if (u_ChromaHalo > 0.001) {
+                        vec3 undertone = getUndertone(v_color.rgb);
+                        outRgb = mix(outRgb, undertone, u_ChromaHalo * pow(u, 1.5));
                     }
 
                     finalAlpha = coreAlpha * bleedFalloff * smoothAa;
@@ -136,7 +169,7 @@ void main() {
         outRgb = v_color.rgb;
     }
 
-    if (finalAlpha <= 0.001) discard;
+    if (finalAlpha <= 0.0001) discard;
 
     if (u_InvertColors != 0) {
         outRgb = vec3(1.0) - outRgb;

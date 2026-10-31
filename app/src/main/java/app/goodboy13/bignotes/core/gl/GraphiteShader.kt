@@ -20,13 +20,23 @@ class GraphiteShader(private val context: Context) {
     private var uAaWidthLocation: Int = -1
     private var uPaperGrainMixLocation: Int = -1
     private var uInvertColorsLocation: Int = -1
+    private var uInkDilutionLocation: Int = -1
+    private var uFiberFeatheringLocation: Int = -1
+    private var uMeniscusRimLocation: Int = -1
+    private var uWetSheenLocation: Int = -1
+    private var uChromaHaloLocation: Int = -1
 
-    var bleedRatio: Float = 0.25f
-    var bleedPower: Float = 2.0f
-    var coreShiftRatio: Float = 0.0f
-    var bleedBaseOpacity: Float = 1.0f
-    var aaWidth: Float = 1.25f
-    var paperGrainMix: Float = 0.0f
+    var bleedRatio: Float = 0.72f
+    var bleedPower: Float = 3.20f
+    var coreShiftRatio: Float = -0.20f
+    var bleedBaseOpacity: Float = 0.36f
+    var aaWidth: Float = 0.55f
+    var paperGrainMix: Float = 0.60f
+    var inkDilution: Float = 0.06f
+    var fiberFeathering: Float = 0.60f
+    var meniscusRim: Float = 0.38f
+    var wetSheen: Float = 0.80f
+    var chromaHalo: Float = 0.80f
     var invertColors: Boolean = false
 
     private val locPosition = 0
@@ -71,6 +81,11 @@ class GraphiteShader(private val context: Context) {
         uAaWidthLocation = GLES30.glGetUniformLocation(programId, "u_AaWidth")
         uPaperGrainMixLocation = GLES30.glGetUniformLocation(programId, "u_PaperGrainMix")
         uInvertColorsLocation = GLES30.glGetUniformLocation(programId, "u_InvertColors")
+        uInkDilutionLocation = GLES30.glGetUniformLocation(programId, "u_InkDilution")
+        uFiberFeatheringLocation = GLES30.glGetUniformLocation(programId, "u_FiberFeathering")
+        uMeniscusRimLocation = GLES30.glGetUniformLocation(programId, "u_MeniscusRim")
+        uWetSheenLocation = GLES30.glGetUniformLocation(programId, "u_WetSheen")
+        uChromaHaloLocation = GLES30.glGetUniformLocation(programId, "u_ChromaHalo")
 
         GLES30.glDeleteShader(vertShader)
         GLES30.glDeleteShader(fragShader)
@@ -91,6 +106,11 @@ class GraphiteShader(private val context: Context) {
         if (uAaWidthLocation >= 0) GLES30.glUniform1f(uAaWidthLocation, aaWidth)
         if (uPaperGrainMixLocation >= 0) GLES30.glUniform1f(uPaperGrainMixLocation, paperGrainMix)
         if (uInvertColorsLocation >= 0) GLES30.glUniform1i(uInvertColorsLocation, if (invertColors) 1 else 0)
+        if (uInkDilutionLocation >= 0) GLES30.glUniform1f(uInkDilutionLocation, inkDilution)
+        if (uFiberFeatheringLocation >= 0) GLES30.glUniform1f(uFiberFeatheringLocation, fiberFeathering)
+        if (uMeniscusRimLocation >= 0) GLES30.glUniform1f(uMeniscusRimLocation, meniscusRim)
+        if (uWetSheenLocation >= 0) GLES30.glUniform1f(uWetSheenLocation, wetSheen)
+        if (uChromaHaloLocation >= 0) GLES30.glUniform1f(uChromaHaloLocation, chromaHalo)
 
         GLES30.glEnableVertexAttribArray(locPosition)
         GLES30.glEnableVertexAttribArray(locNormal)
@@ -223,4 +243,3 @@ class GraphiteShader(private val context: Context) {
         return BufferedReader(InputStreamReader(stream)).use { it.readText() }
     }
 }
-

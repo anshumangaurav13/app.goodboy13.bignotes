@@ -147,6 +147,11 @@ class SketchCanvasRenderer(
             shader.bleedBaseOpacity = inkBleedConfig.bleedBaseOpacity
             shader.aaWidth = inkBleedConfig.aaWidth
             shader.paperGrainMix = inkBleedConfig.paperGrainMix
+            shader.inkDilution = inkBleedConfig.inkDilution
+            shader.fiberFeathering = inkBleedConfig.fiberFeathering
+            shader.meniscusRim = inkBleedConfig.meniscusRim
+            shader.wetSheen = inkBleedConfig.wetSheen
+            shader.chromaHalo = inkBleedConfig.chromaHalo
         }
     }
 
