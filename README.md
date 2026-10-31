@@ -4,36 +4,38 @@
 
 # BigNotes
 
-A fast, smooth, infinite canvas note-taking app designed for Android tablets.
+A fast, smooth, infinite canvas note-taking app engineered for Android tablets and active styluses.
+
 ---
 
 ### Download
 
-[![Download APK](https://img.shields.io/badge/Download-v1.1_Release_APK-blue?style=for-the-badge&logo=android)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/latest)
+[![Download APK](https://img.shields.io/badge/Download-v1.3_Release_APK-blue?style=for-the-badge&logo=android)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/latest)
 
-**[Download BigNotes v1.1 (APK)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/download/v1.1/BigNotes-v1.1.apk)**
+**[Download BigNotes v1.3 (APK)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/download/v1.3/app-release.apk)**
 
 ---
 
 ## Why BigNotes?
 
-BigNotes gives you the freedom of a physical notebook without boundaries. Whether taking lecture notes, sketching ideas, or solving math problems, everything feels fast and natural.
+BigNotes gives you the freedom of a physical notebook without boundaries. Whether taking lecture notes, sketching ideas, or solving math problems, everything feels immediate, organic, and fast.
 
 ### Key Highlights
 
-- **Natural, Instant Inking:** Feels just like pen on paper. Optimized for stylus and active pens with near-zero lag and pressure sensitivity.
-- **Infinite Canvas:** Never run out of space. Zoom, pan, and keep writing as far as your thoughts take you.
-- **Realistic Pens and Brushes:** Switch between a ballpoint pen, pressure-sensitive fountain pen, realistic textured pencil, and highlighters.
-- **Handwritten Math Solver:** Write out math equations naturally, and BigNotes calculates the answers directly on the canvas.
-- **Easy Editing:** Use the lasso tool to select, move, resize, duplicate, or recolor strokes anytime.
-- **Search Your Handwriting:** Find past notes quickly by searching words you handwrote.
-- **Simple Organization:** Organize notebooks and pages into clean, custom folders.
-- **Export to PDF:** Turn notes into clean, high-resolution multi-page PDF documents ready to share or print.
-- **100% Offline and Private:** All notes are saved locally on your device. No account required, no tracking, and no cloud lock-in.
+- **Physical Wet Fountain Pen Inking:** Real-time subtractive dye absorption (`GL_DST_COLOR`) where strokes overlap and cross, paired with capillary fiber bleed, meniscus surface tension (coffee-ring effect), and chromatographic dye separation.
+- **Natural Graphite Pencil:** Procedural paper tooth grain noise dual-sampling and authentic lead abrasion that feels distinctly dry and tactile.
+- **Ultra-Low Latency Inking:** Direct front-buffered OpenGL ES 3.0 pipeline backed by an ARM64 NEON SIMD vectorized Rust core for instant, sub-5ms stylus response.
+- **Infinite Canvas:** Never run out of space. Smoothly pan, rotate, and zoom with zero stutter across an unbounded workspace.
+- **Handwritten Math Solver:** Write out complex math equations naturally, and BigNotes calculates and formats answers inline directly on the canvas.
+- **Search Your Handwriting:** Fast, 100% on-device handwriting recognition to search handwritten words across all your notebooks.
+- **Vector Lasso Editing:** Select, translate, rescale, duplicate, or recolor strokes dynamically.
+- **Smart Organization:** Clean hierarchical folders with automatic top-note focus upon navigation.
+- **High-Resolution Vector/Bitmap PDF Export:** Multi-page paginated exports with 300 DPI tiled GPU rasterization ready to share or print.
+- **100% Offline & Private:** Zero telemetry, no account required, no cloud dependencies. Your data stays entirely on your local storage.
 
 ---
 
 ## Requirements
 
-- Android 8.0 (Oreo) or newer
-- Recommended: Tablet or phone with stylus support (Samsung S Pen, active stylus, or touch)
+- Android 8.0 (Oreo / API 26) or newer (fully tested on Android 15 with 16 KB page alignment)
+- Recommended: Tablet with active stylus / pen support (Lenovo Precision Pen, Samsung S Pen, active USI, or passive capacitive)
