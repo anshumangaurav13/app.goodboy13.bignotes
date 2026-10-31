@@ -4,7 +4,7 @@
 
 # BigNotes
 
-A fast, smooth, infinite canvas note-taking app engineered for Android tablets and active styluses.
+A fast, smooth, infinite canvas note-taking app designed for Android tablets.
 
 ---
 
@@ -18,24 +18,24 @@ A fast, smooth, infinite canvas note-taking app engineered for Android tablets a
 
 ## Why BigNotes?
 
-BigNotes gives you the freedom of a physical notebook without boundaries. Whether taking lecture notes, sketching ideas, or solving math problems, everything feels immediate, organic, and fast.
+BigNotes gives you the freedom of a physical notebook without boundaries. Whether you're taking lecture notes, sketching ideas, or working through math problems, everything feels natural, fast, and effortless.
 
-### Key Highlights
+### Highlights
 
-- **Physical Wet Fountain Pen Inking:** Real-time subtractive dye absorption (`GL_DST_COLOR`) where strokes overlap and cross, paired with capillary fiber bleed, meniscus surface tension (coffee-ring effect), and chromatographic dye separation.
-- **Natural Graphite Pencil:** Procedural paper tooth grain noise dual-sampling and authentic lead abrasion that feels distinctly dry and tactile.
-- **Ultra-Low Latency Inking:** Direct front-buffered OpenGL ES 3.0 pipeline backed by an ARM64 NEON SIMD vectorized Rust core for instant, sub-5ms stylus response.
-- **Infinite Canvas:** Never run out of space. Smoothly pan, rotate, and zoom with zero stutter across an unbounded workspace.
-- **Handwritten Math Solver:** Write out complex math equations naturally, and BigNotes calculates and formats answers inline directly on the canvas.
-- **Search Your Handwriting:** Fast, 100% on-device handwriting recognition to search handwritten words across all your notebooks.
-- **Vector Lasso Editing:** Select, translate, rescale, duplicate, or recolor strokes dynamically.
-- **Smart Organization:** Clean hierarchical folders with automatic top-note focus upon navigation.
-- **High-Resolution Vector/Bitmap PDF Export:** Multi-page paginated exports with 300 DPI tiled GPU rasterization ready to share or print.
-- **100% Offline & Private:** Zero telemetry, no account required, no cloud dependencies. Your data stays entirely on your local storage.
+- **Real Ink on Paper:** Writes like a genuine fountain pen. Ink bleeds subtly into paper fibers and naturally darkens when you write over existing strokes.
+- **Textured Pencil:** Feels like real graphite gliding over textured paper tooth.
+- **Zero Lag:** Designed from the ground up for styluses (S Pen, Lenovo Pen, USI) for an instant, paper-like writing feel.
+- **Infinite Canvas:** Never run out of space. Pan, rotate, and zoom anywhere across an endless page.
+- **Handwritten Math Solver:** Write out math problems by hand, and BigNotes solves and writes the answers right on the page.
+- **Search Your Handwriting:** Find past notes instantly by searching for words you wrote by hand.
+- **Lasso Tool:** Easily select, move, resize, duplicate, or change the color of any stroke.
+- **Clean Organization:** Keep notebooks organized in custom folders. Tapping a folder automatically opens your most recent note.
+- **Export to PDF:** Turn your notes into sharp, high-resolution multi-page PDFs ready to print or share.
+- **100% Offline & Private:** No accounts, no sign-ups, no tracking, and no cloud dependencies. Your notes stay on your tablet.
 
 ---
 
 ## Requirements
 
-- Android 8.0 (Oreo / API 26) or newer (fully tested on Android 15 with 16 KB page alignment)
-- Recommended: Tablet with active stylus / pen support (Lenovo Precision Pen, Samsung S Pen, active USI, or passive capacitive)
+- Android 8.0 or newer
+- Recommended: Android tablet with a stylus (Samsung S Pen, Lenovo Precision Pen, or any active stylus)
