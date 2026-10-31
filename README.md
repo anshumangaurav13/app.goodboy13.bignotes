@@ -4,7 +4,7 @@
 
 # BigNotes
 
-A fast, smooth, infinite canvas note-taking app designed for Android tablets.
+A fast, smooth, vertical-scrolling digital notebook designed for Android tablets.
 
 ---
 
@@ -18,14 +18,14 @@ A fast, smooth, infinite canvas note-taking app designed for Android tablets.
 
 ## Why BigNotes?
 
-BigNotes gives you the freedom of a physical notebook without boundaries. Whether you're taking lecture notes, sketching ideas, or working through math problems, everything feels natural, fast, and effortless.
+BigNotes gives you the focus of a real physical notebook with the flexibility of digital notes. Whether you're taking lecture notes, sketching ideas, or working through math problems, writing feels natural, fast, and grounded.
 
 ### Highlights
 
 - **Real Ink on Paper:** Writes like a genuine fountain pen. Ink bleeds subtly into paper fibers and naturally darkens when you write over existing strokes.
 - **Textured Pencil:** Feels like real graphite gliding over textured paper tooth.
 - **Zero Lag:** Designed from the ground up for styluses (S Pen, Lenovo Pen, USI) for an instant, paper-like writing feel.
-- **Infinite Canvas:** Never run out of space. Pan, rotate, and zoom anywhere across an endless page.
+- **Continuous Vertical Notebook:** Write uninterrupted with smooth vertical scrolling, gentle zoom, and locked rotation—no spinning or disorienting drift, just like a real notebook or legal pad.
 - **Handwritten Math Solver:** Write out math problems by hand, and BigNotes solves and writes the answers right on the page.
 - **Search Your Handwriting:** Find past notes instantly by searching for words you wrote by hand.
 - **Lasso Tool:** Easily select, move, resize, duplicate, or change the color of any stroke.
