@@ -300,6 +300,11 @@ class GlPageRasterizer(private val context: Context) : AutoCloseable {
                 )
 
                 if (mesh.vertexCount > 0) {
+                    if (stroke.isHighlighter) {
+                        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+                    } else {
+                        GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+                    }
                     val buf = getDirectMeshBuffer(mesh.data.size)
                     buf.put(mesh.data, 0, mesh.data.size)
                     buf.position(0)

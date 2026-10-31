@@ -639,6 +639,12 @@ class SketchCanvasRenderer(
         )
 
         // 4.1. Render visible pen, pencil, and other ink strokes ON TOP of highlighters!
+        // Subtractive multiply on light paper for physical Beer-Lambert dye absorption; additive on dark mode
+        if (isDarkMode) {
+            GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        } else {
+            GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        }
         inkStore.renderVisibleChunks(
             shader,
             visMinX, visMinY, visMaxX, visMaxY,
@@ -663,6 +669,11 @@ class SketchCanvasRenderer(
                 highlighterStore.renderStrokesDirect(shader, selHighlighters, ::getOrCreateMesh)
             }
             if (selInks.isNotEmpty()) {
+                if (isDarkMode) {
+                    GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+                } else {
+                    GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+                }
                 inkStore.renderStrokesDirect(shader, selInks, ::getOrCreateMesh)
             }
         }
@@ -796,6 +807,12 @@ class SketchCanvasRenderer(
             selectedStrokeIds,
             ::getOrCreateMesh
         )
+        // Subtractive multiply on light paper for physical Beer-Lambert dye absorption; additive on dark mode
+        if (isDarkMode) {
+            GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        } else {
+            GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        }
         inkStore.renderVisibleChunks(
             shader,
             visMinX, visMinY, visMaxX, visMaxY,

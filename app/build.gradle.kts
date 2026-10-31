@@ -13,6 +13,7 @@ plugins {
 android {
     namespace = "app.goodboy13.bignotes"
     compileSdk = 35
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "app.goodboy13.bignotes"
@@ -68,7 +69,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    implementation("androidx.graphics:graphics-core:1.0.2")
+    implementation("androidx.graphics:graphics-core:1.0.4")
     implementation("androidx.documentfile:documentfile:1.0.1")
 
     val roomVersion = "2.6.1"
