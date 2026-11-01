@@ -5,6 +5,8 @@ in highp vec2 v_normal;
 in highp vec4 v_color;
 in highp float v_tone;
 in highp vec2 v_worldPos;
+in highp vec2 v_toothCoord;
+in highp vec2 v_toothCoordRot;
 
 uniform sampler2D u_ToothTexture;
 
@@ -24,7 +26,6 @@ uniform float u_WetSheen;
 uniform float u_ChromaHalo;
 
 // Finalized Paper Tooth Shader Constants (Velvet Soft)
-const highp float TEXTURE_SCALE = 0.183;
 const highp float TOOTH_SHARPNESS = 0.050;
 const highp float TOOTH_BITE = 0.72;
 const highp float DUAL_SAMPLE_MIX = 0.26;
@@ -62,13 +63,9 @@ void main() {
 
         float edgeFalloff = smoothstep(1.0, 0.35, dist);
 
-        // Continuous organic paper tooth noise with golden-ratio rotated dual-sampling
-        vec2 tc1 = v_worldPos * TEXTURE_SCALE;
-        // Rotation by 23.5 degrees: cos=0.917, sin=0.399
-        mat2 rot = mat2(0.917, 0.399, -0.399, 0.917);
-        vec2 tc2 = (rot * v_worldPos) * (TEXTURE_SCALE * 1.61803) + vec2(0.371, 0.618);
-        float grain1 = texture(u_ToothTexture, tc1).r;
-        float grain2 = texture(u_ToothTexture, tc2).r;
+        // Continuous organic paper tooth noise with pre-interpolated dual-sampled UVs (zero per-pixel matrix math)
+        float grain1 = texture(u_ToothTexture, v_toothCoord).r;
+        float grain2 = texture(u_ToothTexture, v_toothCoordRot).r;
         float grain = mix(grain1, grain2, DUAL_SAMPLE_MIX);
 
         float density = clamp(v_tone, 0.0, 1.0);
@@ -92,9 +89,8 @@ void main() {
         float coreShiftDist = nominalDist * u_CoreShiftRatio;
         float effectiveNominalDist = clamp(nominalDist + coreShiftDist, 0.01, 0.98);
 
-        // 1. Fiber Feathering along paper grain
-        vec2 tc1 = v_worldPos * TEXTURE_SCALE;
-        float paperGrain = texture(u_ToothTexture, tc1).r;
+        // 1. Fiber Feathering along paper grain (using pre-interpolated UVs)
+        float paperGrain = texture(u_ToothTexture, v_toothCoord).r;
         float fiberPerturb = (paperGrain - 0.5) * u_FiberFeathering * effectiveNominalDist;
         float perturbedDist = dist + fiberPerturb;
 
@@ -114,9 +110,9 @@ void main() {
 
             // Wet liquid specular sheen along centerline: subtle gloss, never bleach black ink to chalk
             if (u_WetSheen > 0.001) {
-                float sheen = pow(max(1.0 - coreRatio, 0.0), 3.0) * u_WetSheen;
                 float luminance = dot(outRgb, vec3(0.299, 0.587, 0.114));
                 if (luminance > 0.12) {
+                    float sheen = pow(max(1.0 - coreRatio, 0.0), 3.0) * u_WetSheen;
                     outRgb = mix(outRgb, vec3(1.0), sheen * 0.25 * luminance);
                 }
             }

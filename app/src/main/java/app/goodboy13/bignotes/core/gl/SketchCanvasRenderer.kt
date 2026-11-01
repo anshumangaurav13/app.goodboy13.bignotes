@@ -23,7 +23,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class FrontBufferPacket(
     val dabs: List<StrokePoint> = emptyList(),
-    val clearBeforeDraw: Boolean = false
+    val clearBeforeDraw: Boolean = false,
+    val rawDabs: FloatArray? = null,
+    val rawDabCount: Int = 0
 )
 
 class SketchCanvasRenderer(
@@ -618,8 +620,10 @@ class SketchCanvasRenderer(
         // 4. Final MVP: world coordinates -> view pixels -> buffer NDC
         Matrix.multiplyMM(frontBufferMvpMatrix, 0, screenProjectionMatrix, 0, currentWorldToViewMatrix, 0)
 
+        val hasRawDabs = param.rawDabs != null && param.rawDabCount > 0
+        val hasListDabs = param.dabs.isNotEmpty()
         if (param.clearBeforeDraw) {
-            if (param.dabs.isEmpty()) {
+            if (!hasRawDabs && !hasListDabs) {
                 GLES30.glClearColor(0.0f, 0.0f, 0.0f, 0.0f)
                 GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
                 return
@@ -633,7 +637,7 @@ class SketchCanvasRenderer(
                 currentWorldToViewMatrix
             )
         }
-        if (param.dabs.isEmpty()) return
+        if (!hasRawDabs && !hasListDabs) return
 
         val shader = graphiteShader ?: return
 
@@ -651,16 +655,30 @@ class SketchCanvasRenderer(
         shader.invertColors = isDarkMode
         shader.use(frontBufferMvpMatrix, noiseTextureId)
 
-        val targetBuf = getFrontBuffer(param.dabs.size * 6)
-        val mesh = StrokeTessellator.tessellateDabs(
-            param.dabs,
-            currentTone,
-            currentBaseWidth,
-            targetBuf,
-            colorRgb = currentColorRgb,
-            isInk = isCurrentInk,
-            isHighlighter = isCurrentHighlighter
-        )
+        val dabCount = if (hasRawDabs) param.rawDabCount else param.dabs.size
+        val targetBuf = getFrontBuffer(dabCount * 6)
+        val mesh = if (hasRawDabs) {
+            StrokeTessellator.tessellateRawDabs(
+                param.rawDabs!!,
+                param.rawDabCount,
+                currentTone,
+                currentBaseWidth,
+                targetBuf,
+                colorRgb = currentColorRgb,
+                isInk = isCurrentInk,
+                isHighlighter = isCurrentHighlighter
+            )
+        } else {
+            StrokeTessellator.tessellateDabs(
+                param.dabs,
+                currentTone,
+                currentBaseWidth,
+                targetBuf,
+                colorRgb = currentColorRgb,
+                isInk = isCurrentInk,
+                isHighlighter = isCurrentHighlighter
+            )
+        }
         shader.renderMesh(mesh.vertexBuffer, mesh.vertexCount)
     }
 

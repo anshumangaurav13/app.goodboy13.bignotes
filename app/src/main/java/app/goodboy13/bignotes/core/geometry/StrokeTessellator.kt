@@ -40,6 +40,25 @@ class DabGenerator(private val stepDistance: Float) {
         return listOf(StrokePoint(x, y, pressure, 0L))
     }
 
+    /**
+     * Primitive zero-allocation start method. Writes (x, y, pressure) into out array.
+     * Returns the number of dabs added (1).
+     */
+    fun startRaw(x: Float, y: Float, pressure: Float, out: FloatArray, startOffset: Int = 0): Int {
+        lastX = x
+        lastY = y
+        lastPressure = pressure
+        distToNextDab = stepDistance
+        hasStarted = true
+        if (startOffset + 3 <= out.size) {
+            out[startOffset] = x
+            out[startOffset + 1] = y
+            out[startOffset + 2] = pressure
+            return 1
+        }
+        return 0
+    }
+
     fun addPoint(x: Float, y: Float, pressure: Float): List<StrokePoint> {
         if (!hasStarted) return start(x, y, pressure)
 
@@ -65,6 +84,44 @@ class DabGenerator(private val stepDistance: Float) {
         lastY = y
         lastPressure = pressure
         return dabs
+    }
+
+    /**
+     * Primitive zero-allocation point add method. Writes (x, y, pressure) for each dab into out array.
+     * Returns the number of dabs added.
+     */
+    fun addPointRaw(x: Float, y: Float, pressure: Float, out: FloatArray, startOffset: Int = 0): Int {
+        if (!hasStarted) return startRaw(x, y, pressure, out, startOffset)
+
+        val dx = x - lastX
+        val dy = y - lastY
+        val segDist = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+        if (segDist < 1e-4f) return 0
+
+        val invSeg = 1.0f / segDist
+        var curDist = distToNextDab
+        var offset = startOffset
+        var addedCount = 0
+
+        while (curDist <= segDist) {
+            if (offset + 3 > out.size) break
+            val t = curDist * invSeg
+            val dabX = lastX + dx * t
+            val dabY = lastY + dy * t
+            val dabP = lastPressure + (pressure - lastPressure) * t
+            out[offset] = dabX
+            out[offset + 1] = dabY
+            out[offset + 2] = dabP
+            offset += 3
+            addedCount++
+            curDist += stepDistance
+        }
+
+        distToNextDab = curDist - segDist
+        lastX = x
+        lastY = y
+        lastPressure = pressure
+        return addedCount
     }
 
     /**
@@ -99,21 +156,18 @@ object StrokeTessellator {
     var activeInkConfig: app.goodboy13.bignotes.core.model.InkBleedConfig = app.goodboy13.bignotes.core.model.InkBleedConfig.DEFAULT
 
     fun getStepDistance(baseWidth: Float, isInk: Boolean = false, isHighlighter: Boolean = false): Float {
-        // Step distance needs to be ~15-22% of the minimum effective dab radius
-        // to ensure scalloping depth between overlapping discs is < 0.3% of radius,
-        // producing a silky-smooth, razor-sharp edge even at 1000% zoom.
         if (isHighlighter) {
-            // Highlighter nominal radius is 2.5x baseWidth (5x diameter of regular stroke)
             val nominalRadius = maxOf(5.0f, baseWidth * 2.5f)
             return maxOf(3.0f, nominalRadius * 0.35f)
-        }
-        val minRadius = if (isInk) {
-            maxOf(0.5f, baseWidth * 0.10f)
+        } else if (isInk) {
+            val effRadius = maxOf(0.6f, baseWidth * 0.25f)
+            val step = effRadius * 0.35f
+            return maxOf(0.28f, minOf(step, 1.6f))
         } else {
-            maxOf(0.6f, baseWidth * 0.15f)
+            val effRadius = maxOf(0.7f, baseWidth * 0.30f)
+            val step = effRadius * 0.35f
+            return maxOf(0.30f, minOf(step, 1.8f))
         }
-        val step = minRadius * 0.20f
-        return if (isInk) maxOf(0.12f, minOf(step, 1.2f)) else maxOf(0.15f, minOf(step, 1.5f))
     }
 
     /**
@@ -253,7 +307,7 @@ object StrokeTessellator {
                 dabToneId = 5.5f
             } else if (isInk) {
                 val nominalRadius = getInkRadius(pt.pressure, baseWidth)
-                val extraMargin = maxOf(nominalRadius * activeInkConfig.quadMarginRatio, 2.0f)
+                val extraMargin = maxOf(nominalRadius * activeInkConfig.quadMarginRatio, 0.6f)
                 val quadRadius = nominalRadius + extraMargin
                 val nominalRatio = (nominalRadius / quadRadius).coerceIn(0.05f, 0.95f)
                 radius = quadRadius
@@ -321,7 +375,7 @@ object StrokeTessellator {
                 currentToneId = 5.5f
             } else if (isInk) {
                 val nominalRadius = getInkRadius(pt.pressure, baseWidth)
-                val extraMargin = maxOf(nominalRadius * activeInkConfig.quadMarginRatio, 2.0f)
+                val extraMargin = maxOf(nominalRadius * activeInkConfig.quadMarginRatio, 0.6f)
                 val quadRadius = nominalRadius + extraMargin
                 val nominalRatio = (nominalRadius / quadRadius).coerceIn(0.05f, 0.95f)
                 radius = quadRadius
@@ -341,6 +395,81 @@ object StrokeTessellator {
             putVertex(floatBuffer, pt.x, pt.y, -1f, -1f, radius, r, g, b, alpha, currentToneId)
             putVertex(floatBuffer, pt.x, pt.y,  1f,  1f, radius, r, g, b, alpha, currentToneId)
             putVertex(floatBuffer, pt.x, pt.y, -1f,  1f, radius, r, g, b, alpha, currentToneId)
+        }
+
+        floatBuffer.position(0)
+        return TessellatedMesh(floatBuffer, totalVertices)
+    }
+
+    /**
+     * Tessellates raw flat float dabs ([x, y, pressure] strided) into disc quads.
+     * Zero object allocations during front buffer rendering.
+     */
+    fun tessellateRawDabs(
+        rawDabs: FloatArray,
+        dabCount: Int,
+        tone: PencilTone,
+        baseWidth: Float,
+        targetBuffer: FloatBuffer? = null,
+        colorRgb: Long = tone.colorRgb,
+        isInk: Boolean = tone.isInk,
+        isHighlighter: Boolean = false
+    ): TessellatedMesh {
+        if (dabCount == 0) {
+            val emptyBuffer = targetBuffer ?: ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            emptyBuffer.position(0)
+            return TessellatedMesh(emptyBuffer, 0)
+        }
+
+        val toneId = if (isHighlighter) 5.5f else if (isInk) 3.0f else getGraphiteDensity(colorRgb)
+        val (r, g, b, baseAlpha) = resolveColor(tone, colorRgb, isInk = isInk, isHighlighter = isHighlighter)
+
+        val totalVertices = dabCount * 6
+        val floatCount = totalVertices * FLOATS_PER_VERTEX
+        val floatBuffer = if (targetBuffer != null && targetBuffer.capacity() >= floatCount) {
+            targetBuffer.clear()
+            targetBuffer
+        } else {
+            ByteBuffer.allocateDirect(floatCount * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        }
+
+        var dabOffset = 0
+        for (i in 0 until dabCount) {
+            val ptX = rawDabs[dabOffset]
+            val ptY = rawDabs[dabOffset + 1]
+            val ptPressure = rawDabs[dabOffset + 2]
+            dabOffset += 3
+
+            val radius: Float
+            val alpha: Float
+            val currentToneId: Float
+            if (isHighlighter) {
+                val nominalRadius = (baseWidth * 2.5f * (0.88f + 0.12f * ptPressure)).coerceAtLeast(6.0f)
+                radius = nominalRadius
+                alpha = baseAlpha
+                currentToneId = 5.5f
+            } else if (isInk) {
+                val nominalRadius = getInkRadius(ptPressure, baseWidth)
+                val extraMargin = maxOf(nominalRadius * activeInkConfig.quadMarginRatio, 0.6f)
+                val quadRadius = nominalRadius + extraMargin
+                val nominalRatio = (nominalRadius / quadRadius).coerceIn(0.05f, 0.95f)
+                radius = quadRadius
+                alpha = 1.0f
+                currentToneId = 3.0f + nominalRatio
+            } else {
+                val pressure = ptPressure.coerceIn(0.0f, 1.0f)
+                radius = (baseWidth * (0.32f + 0.68f * pressure) * 0.5f).coerceAtLeast(0.8f)
+                alpha = (baseAlpha * (0.12f + 0.88f * pressure)).coerceIn(0.02f, 0.50f)
+                currentToneId = toneId
+            }
+
+            putVertex(floatBuffer, ptX, ptY, -1f, -1f, radius, r, g, b, alpha, currentToneId)
+            putVertex(floatBuffer, ptX, ptY,  1f, -1f, radius, r, g, b, alpha, currentToneId)
+            putVertex(floatBuffer, ptX, ptY,  1f,  1f, radius, r, g, b, alpha, currentToneId)
+
+            putVertex(floatBuffer, ptX, ptY, -1f, -1f, radius, r, g, b, alpha, currentToneId)
+            putVertex(floatBuffer, ptX, ptY,  1f,  1f, radius, r, g, b, alpha, currentToneId)
+            putVertex(floatBuffer, ptX, ptY, -1f,  1f, radius, r, g, b, alpha, currentToneId)
         }
 
         floatBuffer.position(0)

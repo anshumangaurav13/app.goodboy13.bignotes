@@ -108,6 +108,8 @@ class SketchCanvasView @JvmOverloads constructor(
     }
 
     private var frontBufferedRenderer: GLFrontBufferedRenderer<FrontBufferPacket>? = null
+    private val rawDabPool = Array(8) { FloatArray(512 * 3) }
+    private var rawDabPoolIdx = 0
 
     // Active tool and eraser state
     var activeTool: ActiveTool = ActiveTool.PENCIL
@@ -1088,10 +1090,12 @@ class SketchCanvasView @JvmOverloads constructor(
                                     activeStrokePoints.add(curPt)
                                     val gen = liveDabGenerator
                                     if (gen != null) {
-                                        val finalDabs = gen.addPoint(wx, wy, commitPressure)
-                                        if (finalDabs.isNotEmpty()) {
+                                        val poolBuf = rawDabPool[rawDabPoolIdx]
+                                        rawDabPoolIdx = (rawDabPoolIdx + 1) % rawDabPool.size
+                                        val finalDabsCount = gen.addPointRaw(wx, wy, commitPressure, poolBuf, 0)
+                                        if (finalDabsCount > 0) {
                                             frontBufferedRenderer?.renderFrontBufferedLayer(
-                                                FrontBufferPacket(dabs = finalDabs, clearBeforeDraw = false)
+                                                FrontBufferPacket(rawDabs = poolBuf, rawDabCount = finalDabsCount, clearBeforeDraw = false)
                                             )
                                         }
                                     }
@@ -1564,7 +1568,9 @@ class SketchCanvasView @JvmOverloads constructor(
                 g
             }
 
-            val newDabs = ArrayList<StrokePoint>()
+            val poolBuf = rawDabPool[rawDabPoolIdx]
+            rawDabPoolIdx = (rawDabPoolIdx + 1) % rawDabPool.size
+            var totalRawDabs = 0
 
             // Add digitizer historical points with responsive physical speed tracking and dynamic velocity thinning
             for (h in 0 until event.historySize) {
@@ -1604,7 +1610,8 @@ class SketchCanvasView @JvmOverloads constructor(
                 activeStrokePoints.add(
                     StrokePoint(hwx, hwy, finalBakedPressure, hTime)
                 )
-                newDabs.addAll(gen.addPoint(hwx, hwy, finalBakedPressure))
+                val added = gen.addPointRaw(hwx, hwy, finalBakedPressure, poolBuf, totalRawDabs * 3)
+                totalRawDabs += added
             }
 
             // Current event point
@@ -1636,11 +1643,12 @@ class SketchCanvasView @JvmOverloads constructor(
             val finalEffPressure = (effPressure * (thinning * thinning)).coerceIn(0.01f, 1.0f)
 
             activeStrokePoints.add(StrokePoint(wx, wy, finalEffPressure, event.eventTime))
-            newDabs.addAll(gen.addPoint(wx, wy, finalEffPressure))
+            val added = gen.addPointRaw(wx, wy, finalEffPressure, poolBuf, totalRawDabs * 3)
+            totalRawDabs += added
 
-            if (newDabs.isNotEmpty()) {
+            if (totalRawDabs > 0) {
                 frontBufferedRenderer?.renderFrontBufferedLayer(
-                    FrontBufferPacket(dabs = newDabs, clearBeforeDraw = false)
+                    FrontBufferPacket(rawDabs = poolBuf, rawDabCount = totalRawDabs, clearBeforeDraw = false)
                 )
             }
     }

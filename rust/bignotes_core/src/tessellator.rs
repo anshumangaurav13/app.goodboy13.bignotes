@@ -74,18 +74,14 @@ pub fn get_step_distance(base_width: f32, is_ink: bool, is_highlighter: bool) ->
     if is_highlighter {
         let nominal_radius = 5.0f32.max(base_width * 2.5);
         3.0f32.max(nominal_radius * 0.35)
+    } else if is_ink {
+        let eff_radius = 0.6f32.max(base_width * 0.25);
+        let step = eff_radius * 0.35;
+        0.28f32.max(step.min(1.6))
     } else {
-        let min_radius = if is_ink {
-            0.5f32.max(base_width * 0.10)
-        } else {
-            0.6f32.max(base_width * 0.15)
-        };
-        let step = min_radius * 0.20;
-        if is_ink {
-            0.12f32.max(step.min(1.2))
-        } else {
-            0.15f32.max(step.min(1.5))
-        }
+        let eff_radius = 0.7f32.max(base_width * 0.30);
+        let step = eff_radius * 0.35;
+        0.30f32.max(step.min(1.8))
     }
 }
 
@@ -195,7 +191,7 @@ pub fn tessellate_stroke(
             (nominal_radius, base_alpha, 5.5)
         } else if is_ink {
             let nominal_radius = get_ink_radius(pt.pressure, base_width);
-            let extra_margin = (nominal_radius * quad_margin_ratio).max(2.0);
+            let extra_margin = (nominal_radius * quad_margin_ratio).max(0.6);
             let quad_radius = nominal_radius + extra_margin;
             let nominal_ratio = (nominal_radius / quad_radius).clamp(0.05, 0.95);
             (quad_radius, 1.0, 3.0 + nominal_ratio)
