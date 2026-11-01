@@ -59,9 +59,9 @@ object PdfExporter {
             style = Paint.Style.FILL
         }
         val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = 9f
-            color = Color.DKGRAY
-            textAlign = Paint.Align.RIGHT
+            textSize = 8.5f
+            color = 0xFF888888.toInt()
+            textAlign = Paint.Align.CENTER
         }
 
         val rasterizer = if (options.renderMode == PdfRenderMode.RASTER_300DPI || options.renderMode == PdfRenderMode.HYBRID) {
@@ -94,66 +94,58 @@ object PdfExporter {
                     )
                 }
 
-                // 2. Render strokes with default slate light mode colors (clipped cleanly to printable bounds)
-                canvas.save()
-                canvas.clipRect(0f, marginPt, widthPt.toFloat(), heightPt - marginPt)
+                // 2. Render strokes (exact canvas parity, no artificial clip outlines)
+                if (options.renderMode == PdfRenderMode.RASTER_300DPI && rasterizer != null) {
+                    rasterizer.renderPagePartition(
+                        canvas, partition, pageFormat, ::resolvePdfStrokeColor,
+                        clearWhite = true,
+                        images = images
+                    )
+                } else {
+                    canvas.save()
+                    if (images.isNotEmpty()) {
+                        drawCanvasImages(canvas, images, partition.worldTopY, marginPt, scale, context)
+                    }
 
-                // 2.1 Draw images beneath strokes for Vector/Hybrid CPU fallback
-                if (images.isNotEmpty() && (options.renderMode != PdfRenderMode.RASTER_300DPI || rasterizer == null)) {
-                    drawCanvasImages(canvas, images, partition.worldTopY, marginPt, scale, context)
-                }
+                    when (options.renderMode) {
+                        PdfRenderMode.HYBRID -> {
+                            val inkStrokes = partition.strokes.filter { it.isInk || it.tone.isInk }
+                            val pencilStrokes = partition.strokes.filter { !(it.isInk || it.tone.isInk) }
 
-                when (options.renderMode) {
-                    PdfRenderMode.HYBRID -> {
-                        // Vector Ink Pen + High-Res Textured Graphite Pencil Layer
-                        val inkStrokes = partition.strokes.filter { it.isInk || it.tone.isInk }
-                        val pencilStrokes = partition.strokes.filter { !(it.isInk || it.tone.isInk) }
+                            drawVectorStrokes(canvas, inkStrokes, partition.worldTopY, marginPt, scale, vectorPaint, circlePaint, alphaOverride = 255)
 
-                        // Render solid fountain pen strokes as scalable native PDF vectors
-                        drawVectorStrokes(canvas, inkStrokes, partition.worldTopY, marginPt, scale, vectorPaint, circlePaint, alphaOverride = 255)
-
-                        // Render pencil strokes on high-res textured raster with exact canvas fidelity
-                        if (pencilStrokes.isNotEmpty()) {
-                            if (rasterizer != null) {
-                                rasterizer.renderPagePartition(
-                                    canvas, partition, pageFormat, ::resolvePdfStrokeColor,
-                                    filterStroke = { !(it.isInk || it.tone.isInk) },
-                                    clearWhite = false
-                                )
-                            } else {
-                                drawPencilRasterLayer(canvas, pencilStrokes, partition.worldTopY, marginPt, scale, widthPt, heightPt)
+                            if (pencilStrokes.isNotEmpty()) {
+                                if (rasterizer != null) {
+                                    rasterizer.renderPagePartition(
+                                        canvas, partition, pageFormat, ::resolvePdfStrokeColor,
+                                        filterStroke = { !(it.isInk || it.tone.isInk) },
+                                        clearWhite = false
+                                    )
+                                } else {
+                                    drawPencilRasterLayer(canvas, pencilStrokes, partition.worldTopY, marginPt, scale, widthPt, heightPt)
+                                }
                             }
                         }
-                    }
-                    PdfRenderMode.VECTOR -> {
-                        // Vector Only: Scalable vector paths for all strokes
-                        val inkStrokes = partition.strokes.filter { it.isInk || it.tone.isInk }
-                        val pencilStrokes = partition.strokes.filter { !(it.isInk || it.tone.isInk) }
+                        PdfRenderMode.VECTOR -> {
+                            val inkStrokes = partition.strokes.filter { it.isInk || it.tone.isInk }
+                            val pencilStrokes = partition.strokes.filter { !(it.isInk || it.tone.isInk) }
 
-                        drawVectorStrokes(canvas, inkStrokes, partition.worldTopY, marginPt, scale, vectorPaint, circlePaint, alphaOverride = 255)
-                        drawVectorStrokes(canvas, pencilStrokes, partition.worldTopY, marginPt, scale, vectorPaint, circlePaint, alphaOverride = 130)
-                    }
-                    PdfRenderMode.RASTER_300DPI -> {
-                        // High-Res 300 DPI Full Page Rasterization with 100% canvas parity
-                        if (rasterizer != null) {
-                            rasterizer.renderPagePartition(
-                                canvas, partition, pageFormat, ::resolvePdfStrokeColor,
-                                clearWhite = true,
-                                images = images
-                            )
-                        } else {
+                            drawVectorStrokes(canvas, inkStrokes, partition.worldTopY, marginPt, scale, vectorPaint, circlePaint, alphaOverride = 255)
+                            drawVectorStrokes(canvas, pencilStrokes, partition.worldTopY, marginPt, scale, vectorPaint, circlePaint, alphaOverride = 130)
+                        }
+                        PdfRenderMode.RASTER_300DPI -> {
                             drawFullPageRaster(canvas, partition.strokes, partition.worldTopY, marginPt, scale, widthPt, heightPt)
                         }
                     }
+                    canvas.restore()
                 }
-                canvas.restore()
 
-                // 3. Page Number Footer
-                if (totalPages > 1) {
+                // 3. Page Number Footer (Subtle, bottom center, zero shift to page boundaries)
+                if (options.includePageNumbers) {
                     canvas.drawText(
-                        "Page ${partition.pageIndex + 1} of $totalPages",
-                        widthPt - marginPt,
-                        heightPt - (marginPt * 0.45f),
+                        "${partition.pageIndex + 1}",
+                        widthPt * 0.5f,
+                        heightPt - (marginPt * 0.40f),
                         footerPaint
                     )
                 }

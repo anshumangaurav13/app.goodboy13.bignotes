@@ -36,9 +36,11 @@ fun ExportPdfDialog(
     isExporting: Boolean,
     initialFormat: PageFormat = PageFormat.A4,
     initialMode: PdfRenderMode = PdfRenderMode.RASTER_300DPI,
+    initialIncludePageNumbers: Boolean = true,
     initialExportFormat: ExportFormat = ExportFormat.PDF,
     onFormatChanged: ((PageFormat) -> Unit)? = null,
     onModeChanged: ((PdfRenderMode) -> Unit)? = null,
+    onIncludePageNumbersChanged: ((Boolean) -> Unit)? = null,
     onExport: (PdfExportOptions) -> Unit,
     onExportMarkdown: (() -> Unit)? = null,
     onDismiss: () -> Unit
@@ -47,6 +49,7 @@ fun ExportPdfDialog(
     var selectedFormat by remember { mutableStateOf(initialFormat) }
     var selectedMode by remember { mutableStateOf(initialMode) }
     var embedSearchableText by remember { mutableStateOf(true) }
+    var includePageNumbers by remember { mutableStateOf(initialIncludePageNumbers) }
 
     Dialog(onDismissRequest = { if (!isExporting) onDismiss() }) {
         Surface(
@@ -248,6 +251,45 @@ fun ExportPdfDialog(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Page Numbers Option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable {
+                                includePageNumbers = !includePageNumbers
+                                onIncludePageNumbersChanged?.invoke(includePageNumbers)
+                            }
+                            .padding(vertical = 4.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = includePageNumbers,
+                            onCheckedChange = {
+                                includePageNumbers = it
+                                onIncludePageNumbersChanged?.invoke(it)
+                            },
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Include Page Numbers",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            )
+                            Text(
+                                text = "Subtle numbering at bottom center",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
                 } else {
                     // Markdown (.md) Information Card
                     Card(
@@ -313,7 +355,8 @@ fun ExportPdfDialog(
                                     PdfExportOptions(
                                         pageFormat = selectedFormat,
                                         renderMode = selectedMode,
-                                        embedSearchableText = embedSearchableText
+                                        embedSearchableText = embedSearchableText,
+                                        includePageNumbers = includePageNumbers
                                     )
                                 )
                             }

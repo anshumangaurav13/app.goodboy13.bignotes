@@ -225,6 +225,9 @@ fun BigNotesMainScreen(
         val savedModeName = prefs.getString("pdf_render_mode", PdfRenderMode.RASTER_300DPI.name) ?: PdfRenderMode.RASTER_300DPI.name
         mutableStateOf(try { PdfRenderMode.valueOf(savedModeName) } catch (e: Exception) { PdfRenderMode.RASTER_300DPI })
     }
+    var includePdfPageNumbers by remember {
+        mutableStateOf(prefs.getBoolean("pdf_include_page_numbers", true))
+    }
     var showPageSeparators by remember {
         mutableStateOf(prefs.getBoolean("show_page_separators", true))
     }
@@ -1531,6 +1534,7 @@ fun BigNotesMainScreen(
             isExporting = isExporting,
             initialFormat = selectedPdfPageFormat,
             initialMode = selectedPdfRenderMode,
+            initialIncludePageNumbers = includePdfPageNumbers,
             onFormatChanged = { format ->
                 selectedPdfPageFormat = format
                 prefs.edit().putString("pdf_page_format", format.name).apply()
@@ -1539,12 +1543,18 @@ fun BigNotesMainScreen(
                 selectedPdfRenderMode = mode
                 prefs.edit().putString("pdf_render_mode", mode.name).apply()
             },
+            onIncludePageNumbersChanged = { include ->
+                includePdfPageNumbers = include
+                prefs.edit().putBoolean("pdf_include_page_numbers", include).apply()
+            },
             onExport = { exportOptions ->
                 selectedPdfPageFormat = exportOptions.pageFormat
                 selectedPdfRenderMode = exportOptions.renderMode
+                includePdfPageNumbers = exportOptions.includePageNumbers
                 prefs.edit()
                     .putString("pdf_page_format", exportOptions.pageFormat.name)
                     .putString("pdf_render_mode", exportOptions.renderMode.name)
+                    .putBoolean("pdf_include_page_numbers", exportOptions.includePageNumbers)
                     .apply()
                 coroutineScope.launch {
                     try {
