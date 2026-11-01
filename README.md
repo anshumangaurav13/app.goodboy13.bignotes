@@ -12,9 +12,9 @@ BigNotes is designed to give you the grounded simplicity of a physical legal pad
 
 ### Download
 
-[![Download APK](https://img.shields.io/badge/Download-v1.3_Release_APK-blue?style=for-the-badge&logo=android)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/latest)
+[![Download Latest APK](https://img.shields.io/github/v/release/anshumangaurav13/app.goodboy13.bignotes?style=for-the-badge&logo=android&label=Download%20Latest%20APK&color=blue)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/latest/download/app-release.apk)
 
-**[Download BigNotes v1.3 (APK)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/download/v1.3/app-release.apk)**
+**[Direct Download: Latest Release (APK)](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/latest/download/app-release.apk)** &bull; **[View Release Notes & Changelogs](https://github.com/anshumangaurav13/app.goodboy13.bignotes/releases/latest)**
 
 ---
 
