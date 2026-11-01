@@ -52,6 +52,7 @@ import app.goodboy13.bignotes.ui.model.NoteItem
 import app.goodboy13.bignotes.ui.model.NoteSortOrder
 import app.goodboy13.bignotes.ui.model.sortedWithOrder
 import app.goodboy13.bignotes.core.export.PageFormat
+import app.goodboy13.bignotes.core.export.PdfMargin
 import app.goodboy13.bignotes.core.export.PdfPagePaginator
 import app.goodboy13.bignotes.core.search.model.SearchHit
 import kotlin.math.ceil
@@ -79,6 +80,7 @@ fun NotesSidebar(
     onSearchQueryChanged: ((String) -> Unit)? = null,
     onSearchHitSelected: ((SearchHit) -> Unit)? = null,
     pageFormat: PageFormat = PageFormat.A4,
+    margin: PdfMargin = PdfMargin.NONE,
     getPageCount: ((NoteItem) -> Int)? = null,
     statusBarHeight: Dp = 0.dp,
     modifier: Modifier = Modifier
@@ -476,6 +478,7 @@ fun NotesSidebar(
                             isEditing = isEditing,
                             matchingHits = searchHits[note.id],
                             pageFormat = pageFormat,
+                            margin = margin,
                             getPageCount = getPageCount,
                             onClick = {
                                 onNoteSelect(note.id)
@@ -562,6 +565,7 @@ private fun NoteRowItem(
     isEditing: Boolean,
     matchingHits: List<SearchHit>? = null,
     pageFormat: PageFormat = PageFormat.A4,
+    margin: PdfMargin = PdfMargin.NONE,
     getPageCount: ((NoteItem) -> Int)? = null,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -607,9 +611,9 @@ private fun NoteRowItem(
             .then(clickModifier)
             .padding(horizontal = 10.dp, vertical = if (isEditing) 6.dp else 8.5.dp)
     ) {
-        val pageCount = remember(note, pageFormat) {
+        val pageCount = remember(note, pageFormat, margin) {
             getPageCount?.invoke(note) ?: run {
-                val worldH = PdfPagePaginator.getWorldPageHeight(pageFormat)
+                val worldH = PdfPagePaginator.getWorldPageHeight(pageFormat, margin.marginPt)
                 if (note.maxY <= 0f || note.strokeCount == 0) 1 else max(1, ceil(note.maxY / worldH).toInt())
             }
         }

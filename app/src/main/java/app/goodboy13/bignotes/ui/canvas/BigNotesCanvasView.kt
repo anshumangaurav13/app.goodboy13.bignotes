@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.goodboy13.bignotes.core.export.PageFormat
+import app.goodboy13.bignotes.core.export.PdfMargin
 import app.goodboy13.bignotes.core.export.PdfPagePaginator
 import app.goodboy13.bignotes.core.gl.SketchCanvasView
 import app.goodboy13.bignotes.core.model.ActiveTool
@@ -86,6 +87,7 @@ fun BigNotesCanvasView(
     velocityBezierConfig: BezierControlPoints = app.goodboy13.bignotes.core.model.VelocityCurveDefaults.CALLIGRAPHIC,
     velocityThinning: Float = 0.60f,
     pageFormat: PageFormat = PageFormat.A4,
+    margin: PdfMargin = PdfMargin.NONE,
     showPageSeparators: Boolean = true,
     inkBleedConfig: app.goodboy13.bignotes.core.model.InkBleedConfig = app.goodboy13.bignotes.core.model.InkBleedConfig.DEFAULT,
     isCanvasEnabled: Boolean = true,
@@ -128,8 +130,8 @@ fun BigNotesCanvasView(
         onSelectedImageChange?.invoke(img)
     }
 
-    val worldPageHeight = remember(pageFormat) {
-        PdfPagePaginator.getWorldPageHeight(pageFormat)
+    val worldPageHeight = remember(pageFormat, margin) {
+        PdfPagePaginator.getWorldPageHeight(pageFormat, margin.marginPt)
     }
 
     LaunchedEffect(activeSearchHit) {
@@ -228,7 +230,7 @@ fun BigNotesCanvasView(
                 if (view.inkBleedConfig != inkBleedConfig) {
                     view.inkBleedConfig = inkBleedConfig
                 }
-                if (view.worldPageHeight != worldPageHeight) {
+                if (kotlin.math.abs(view.worldPageHeight - worldPageHeight) > 0.01f) {
                     view.worldPageHeight = worldPageHeight
                 }
                 view.onStrokesChanged = onStrokesChanged

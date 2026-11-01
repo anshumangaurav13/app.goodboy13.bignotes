@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.BorderStroke
 import app.goodboy13.bignotes.core.model.BezierControlPoints
+import app.goodboy13.bignotes.core.export.PageFormat
+import app.goodboy13.bignotes.core.export.PdfMargin
 import app.goodboy13.bignotes.core.model.HoverCursorOrientation
 import app.goodboy13.bignotes.core.model.GridConfig
 import app.goodboy13.bignotes.core.model.GridStyle
@@ -104,6 +106,10 @@ fun SettingsDialog(
     onVelocityBezierChange: (BezierControlPoints) -> Unit,
     showPageSeparators: Boolean = true,
     onShowPageSeparatorsChange: (Boolean) -> Unit = {},
+    selectedPageFormat: PageFormat = PageFormat.A4,
+    onPageFormatChange: (PageFormat) -> Unit = {},
+    selectedMargin: PdfMargin = PdfMargin.NONE,
+    onMarginChange: (PdfMargin) -> Unit = {},
     gridConfig: GridConfig = GridConfig(),
     onGridConfigChange: (GridConfig) -> Unit = {},
     strictStylusMode: Boolean = true,
@@ -355,7 +361,11 @@ fun SettingsDialog(
                                     gridConfig = gridConfig,
                                     onGridConfigChange = onGridConfigChange,
                                     showPageSeparators = showPageSeparators,
-                                    onShowPageSeparatorsChange = onShowPageSeparatorsChange
+                                    onShowPageSeparatorsChange = onShowPageSeparatorsChange,
+                                    pageFormat = selectedPageFormat,
+                                    onPageFormatChange = onPageFormatChange,
+                                    margin = selectedMargin,
+                                    onMarginChange = onMarginChange
                                 )
                                 SettingsCategory.GESTURES -> GesturesDetail(
                                     multiFingerGesturesEnabled = multiFingerGesturesEnabled,
@@ -805,7 +815,11 @@ private fun CanvasGridDetail(
     gridConfig: GridConfig,
     onGridConfigChange: (GridConfig) -> Unit,
     showPageSeparators: Boolean,
-    onShowPageSeparatorsChange: (Boolean) -> Unit
+    onShowPageSeparatorsChange: (Boolean) -> Unit,
+    pageFormat: PageFormat = PageFormat.A4,
+    onPageFormatChange: (PageFormat) -> Unit = {},
+    margin: PdfMargin = PdfMargin.NONE,
+    onMarginChange: (PdfMargin) -> Unit = {}
 ) {
     SectionHeader("GRID BACKGROUND")
     SettingsCard {
@@ -899,7 +913,7 @@ private fun CanvasGridDetail(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Show horizontal dotted page boundaries for PDF export layout",
+                    text = "Show horizontal dotted page boundaries for notebook pages",
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
@@ -908,6 +922,73 @@ private fun CanvasGridDetail(
                 checked = showPageSeparators,
                 onCheckedChange = onShowPageSeparatorsChange,
                 modifier = Modifier.scale(0.8f)
+            )
+        }
+
+        if (showPageSeparators) {
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Paper Size",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(PageFormat.A4, PageFormat.LETTER, PageFormat.LEGAL_14).forEach { format ->
+                    val isSelected = pageFormat == format
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onPageFormatChange(format) },
+                        label = {
+                            Text(
+                                when (format) {
+                                    PageFormat.A4 -> "A4"
+                                    PageFormat.LETTER -> "Letter"
+                                    PageFormat.LEGAL_14 -> "Legal 14"
+                                },
+                                fontSize = 12.sp
+                            )
+                        },
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Margins",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                PdfMargin.entries.forEach { m ->
+                    val isSelected = margin == m
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onMarginChange(m) },
+                        label = { Text(m.shortName, fontSize = 11.sp) },
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            val worldH = app.goodboy13.bignotes.core.export.PdfPagePaginator.getWorldPageHeight(pageFormat, margin.marginPt)
+            Text(
+                text = "Separator interval: ${String.format(java.util.Locale.US, "%.1f", worldH)} units (${margin.description})",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
             )
         }
     }

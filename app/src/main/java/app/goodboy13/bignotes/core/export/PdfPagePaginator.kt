@@ -19,12 +19,12 @@ data class PdfPagePartition(
 )
 
 object PdfPagePaginator {
-    const val MARGIN_PT = 36.0f // 0.5 inch margins
+    const val MARGIN_PT = 0.0f // Baseline full bleed (0 pt) for 1:1 parity with in-app canvas
     const val CANONICAL_WIDTH = 1200.0f
 
     fun getWorldPageHeight(pageFormat: PageFormat, marginPt: Float = MARGIN_PT): Float {
-        val usableWidthPt = pageFormat.widthPt - (2 * marginPt)
-        val usableHeightPt = pageFormat.heightPt - (2 * marginPt)
+        val usableWidthPt = (pageFormat.widthPt - (2 * marginPt)).coerceAtLeast(10f)
+        val usableHeightPt = (pageFormat.heightPt - (2 * marginPt)).coerceAtLeast(10f)
         val scale = usableWidthPt / CANONICAL_WIDTH
         return usableHeightPt / scale
     }

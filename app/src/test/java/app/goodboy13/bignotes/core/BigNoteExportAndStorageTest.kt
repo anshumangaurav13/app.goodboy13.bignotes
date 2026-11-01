@@ -141,7 +141,8 @@ class BigNoteExportAndStorageTest {
 
         val pages = PdfPagePaginator.paginate(
             strokes = listOf(stroke1, stroke2, stroke3Overlapping, stroke4),
-            pageFormat = PageFormat.LETTER
+            pageFormat = PageFormat.LETTER,
+            marginPt = 36f
         )
 
         assertEquals("Must paginate into 2 pages", 2, pages.size)
@@ -184,6 +185,35 @@ class BigNoteExportAndStorageTest {
         assertEquals(18f, app.goodboy13.bignotes.core.export.PdfMargin.SMALL.marginPt, 0.001f)
         assertEquals(36f, app.goodboy13.bignotes.core.export.PdfMargin.MEDIUM.marginPt, 0.001f)
         assertEquals(54f, app.goodboy13.bignotes.core.export.PdfMargin.LARGE.marginPt, 0.001f)
+    }
+
+    @Test
+    fun testPdfPagePaginator_readjustedPageSeparatorLocationsForAllPageSizes() {
+        // A4 Full Bleed (0 margin)
+        val a4Height = PdfPagePaginator.getWorldPageHeight(PageFormat.A4, 0f)
+        assertEquals(1200f * (842f / 595f), a4Height, 0.01f)
+        // Default call without margin must match 0 pt full bleed baseline
+        assertEquals(a4Height, PdfPagePaginator.getWorldPageHeight(PageFormat.A4), 0.01f)
+
+        // Letter Full Bleed (0 margin)
+        val letterHeight = PdfPagePaginator.getWorldPageHeight(PageFormat.LETTER, 0f)
+        assertEquals(1200f * (792f / 612f), letterHeight, 0.01f)
+        assertEquals(letterHeight, PdfPagePaginator.getWorldPageHeight(PageFormat.LETTER), 0.01f)
+
+        // Legal 14 Full Bleed (0 margin)
+        val legalHeight = PdfPagePaginator.getWorldPageHeight(PageFormat.LEGAL_14, 0f)
+        assertEquals(1200f * (1008f / 612f), legalHeight, 0.01f)
+        assertEquals(legalHeight, PdfPagePaginator.getWorldPageHeight(PageFormat.LEGAL_14), 0.01f)
+
+        // Small margins (18 pt)
+        val a4Small = PdfPagePaginator.getWorldPageHeight(PageFormat.A4, 18f)
+        val expectedA4Small = (842f - 36f) / ((595f - 36f) / 1200f)
+        assertEquals(expectedA4Small, a4Small, 0.01f)
+
+        // Medium margins (36 pt)
+        val a4Medium = PdfPagePaginator.getWorldPageHeight(PageFormat.A4, 36f)
+        val expectedA4Medium = (842f - 72f) / ((595f - 72f) / 1200f)
+        assertEquals(expectedA4Medium, a4Medium, 0.01f)
     }
 
     @Test

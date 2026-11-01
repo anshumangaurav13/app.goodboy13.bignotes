@@ -39,7 +39,7 @@ fun CanvasVerticalScrollbar(
     scrollFraction: Float,
     thumbRatio: Float,
     currentScrollWorldY: Float,
-    worldPageHeight: Float = 1750f,
+    worldPageHeight: Float = 1698.15f,
     onScrollToFraction: (Float) -> Unit,
     onScrubbingFinished: () -> Unit,
     modifier: Modifier = Modifier

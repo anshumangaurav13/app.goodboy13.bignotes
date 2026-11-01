@@ -128,7 +128,7 @@ class PageSeparatorRenderer {
         updateMesh(basePageWidth)
         if (vertexCount <= 0) return
 
-        val startPage = kotlin.math.floor(visMinY / worldPageHeight).toInt().coerceAtLeast(0)
+        val startPage = kotlin.math.floor(visMinY / worldPageHeight).toInt().coerceAtLeast(1)
         val endPage = kotlin.math.ceil(visMaxY / worldPageHeight).toInt().coerceAtLeast(startPage)
         if (endPage < startPage) return
 

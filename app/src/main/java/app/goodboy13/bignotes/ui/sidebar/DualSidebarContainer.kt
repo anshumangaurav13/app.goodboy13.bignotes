@@ -61,6 +61,7 @@ fun DualSidebarContainer(
     onSearchQueryChanged: ((String) -> Unit)? = null,
     onSearchHitSelected: ((app.goodboy13.bignotes.core.search.model.SearchHit) -> Unit)? = null,
     pageFormat: app.goodboy13.bignotes.core.export.PageFormat = app.goodboy13.bignotes.core.export.PageFormat.A4,
+    margin: app.goodboy13.bignotes.core.export.PdfMargin = app.goodboy13.bignotes.core.export.PdfMargin.NONE,
     getPageCount: ((NoteItem) -> Int)? = null,
     statusBarHeight: Dp = 0.dp,
     modifier: Modifier = Modifier
@@ -134,6 +135,7 @@ fun DualSidebarContainer(
                 onSearchQueryChanged = onSearchQueryChanged,
                 onSearchHitSelected = onSearchHitSelected,
                 pageFormat = pageFormat,
+                margin = margin,
                 getPageCount = getPageCount,
                 statusBarHeight = statusBarHeight,
                 modifier = Modifier

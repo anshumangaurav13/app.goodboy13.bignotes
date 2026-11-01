@@ -50,7 +50,7 @@ class SketchCanvasRenderer(
     @Volatile
     var showPageSeparators: Boolean = true
     @Volatile
-    var worldPageHeight: Float = 1766.73f
+    var worldPageHeight: Float = 1698.15f
 
     var currentTone: PencilTone = PencilTone.SOFT
     var currentColorRgb: Long = PencilTone.SOFT.colorRgb
