@@ -35,7 +35,7 @@ object PdfExporter {
         val outputFile = File(exportDir, "${sanitizedTitle}_${System.currentTimeMillis()}.pdf")
 
         val pdfDocument = PdfDocument()
-        val pages = PdfPagePaginator.paginate(strokes, options.pageFormat)
+        val pages = PdfPagePaginator.paginate(strokes, options.pageFormat, images = images)
         val totalPages = pages.size
 
         val pageFormat = options.pageFormat
@@ -94,7 +94,13 @@ object PdfExporter {
                     )
                 }
 
-                // 2. Render strokes (exact canvas parity, no artificial clip outlines)
+                // 2. Render strokes (cut off cleanly at page boundaries for 1:1 canvas parity)
+                val topClip = if (partition.pageIndex == 0) 0f else marginPt
+                val bottomClip = if (partition.pageIndex == totalPages - 1 && !options.includePageNumbers) heightPt.toFloat() else heightPt - marginPt
+
+                canvas.save()
+                canvas.clipRect(0f, topClip, widthPt.toFloat(), bottomClip)
+
                 if (options.renderMode == PdfRenderMode.RASTER_300DPI && rasterizer != null) {
                     rasterizer.renderPagePartition(
                         canvas, partition, pageFormat, ::resolvePdfStrokeColor,
@@ -102,7 +108,6 @@ object PdfExporter {
                         images = images
                     )
                 } else {
-                    canvas.save()
                     if (images.isNotEmpty()) {
                         drawCanvasImages(canvas, images, partition.worldTopY, marginPt, scale, context)
                     }
@@ -137,8 +142,8 @@ object PdfExporter {
                             drawFullPageRaster(canvas, partition.strokes, partition.worldTopY, marginPt, scale, widthPt, heightPt)
                         }
                     }
-                    canvas.restore()
                 }
+                canvas.restore()
 
                 // 3. Page Number Footer (Subtle, bottom center, zero shift to page boundaries)
                 if (options.includePageNumbers) {

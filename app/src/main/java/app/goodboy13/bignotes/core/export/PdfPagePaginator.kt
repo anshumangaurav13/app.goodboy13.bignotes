@@ -48,89 +48,57 @@ object PdfPagePaginator {
     }
 
     /**
-     * Paginates strokes according to the strict page-break overlap rule:
-     * "the strokes that overlap the page-break should only appear in the next page."
-     *
-     * 1. Any stroke spanning across the nominal page break is excluded from the current page.
-     * 2. The subsequent page begins at the minimum Y of remaining/deferred strokes,
-     *    ensuring the deferred stroke appears completely at the top of the next page without clipping.
+     * Paginates strokes with strict 1:1 parity with the in-app canvas.
+     * Every page k spans exactly [k * worldPageHeight, (k + 1) * worldPageHeight].
+     * Any stroke crossing a page boundary appears on both adjacent pages and is
+     * cleanly cut off at the boundary during rendering, guaranteeing that the exported
+     * PDF matches the notebook canvas exactly with zero coordinate shifting.
      */
     fun paginate(
         strokes: List<Stroke>,
         pageFormat: PageFormat,
-        marginPt: Float = MARGIN_PT
+        marginPt: Float = MARGIN_PT,
+        images: List<app.goodboy13.bignotes.core.model.CanvasImage> = emptyList()
     ): List<PdfPagePartition> {
         val validStrokes = strokes.filter { it.points.isNotEmpty() }
-        if (validStrokes.isEmpty()) {
+        val worldPageHeight = getWorldPageHeight(pageFormat, marginPt)
+
+        if (validStrokes.isEmpty() && images.isEmpty()) {
             return listOf(
                 PdfPagePartition(
                     pageIndex = 0,
                     worldTopY = 0f,
-                    worldBottomY = 1600f,
+                    worldBottomY = worldPageHeight,
                     strokes = emptyList()
                 )
             )
         }
 
         val strokeBoxes = validStrokes.map { calculateStrokeBounds(it) }
-        val remaining = strokeBoxes.sortedBy { it.minY }.toMutableList()
+        val maxStrokeY = if (strokeBoxes.isNotEmpty()) strokeBoxes.maxOf { it.maxY } else 0f
+        val maxImageY = if (images.isNotEmpty()) images.maxOf { it.centerY + it.height * 0.5f } else 0f
+        val maxContentY = maxOf(maxStrokeY, maxImageY)
 
-        val worldPageHeight = getWorldPageHeight(pageFormat, marginPt)
+        val totalPages = maxOf(1, kotlin.math.ceil(maxContentY / worldPageHeight).toInt())
 
-        val pages = mutableListOf<PdfPagePartition>()
-        var pageIndex = 0
+        val pages = ArrayList<PdfPagePartition>(totalPages)
+        for (pageIndex in 0 until totalPages) {
+            val pageTopY = pageIndex * worldPageHeight
+            val pageBottomY = (pageIndex + 1) * worldPageHeight
 
-        // Start page at minOf(0f, first stroke minY) so top spacing is preserved
-        var currentTopY = minOf(0f, remaining.first().minY)
-
-        while (remaining.isNotEmpty()) {
-            val nominalBottomY = currentTopY + worldPageHeight
-
-            val pageStrokes = mutableListOf<Stroke>()
-            val toRemove = mutableListOf<StrokeBoundingBox>()
-
-            for (box in remaining) {
-                if (box.maxY <= nominalBottomY) {
-                    // Completely fits within the current page
-                    pageStrokes.add(box.stroke)
-                    toRemove.add(box)
-                } else if (box.minY < nominalBottomY) {
-                    // Overlaps the cutoff line!
-                    // Strict User Rule: "strokes that are overlapping on the cutoff line should be repeated on both pages."
-                    // Add to current page strokes, but do NOT add to toRemove so it repeats on the next page.
-                    pageStrokes.add(box.stroke)
-                } else {
-                    // Beyond the current page break
-                }
-            }
-
-            // Guard against infinite loop if no stroke is removed from remaining (e.g., all remaining overlap or exceed page height)
-            if (toRemove.isEmpty() && remaining.isNotEmpty()) {
-                val first = remaining.first()
-                if (!pageStrokes.contains(first.stroke)) {
-                    pageStrokes.add(first.stroke)
-                }
-                toRemove.add(first)
-            }
-
-            remaining.removeAll(toRemove)
+            // Include strokes that intersect this page's vertical interval [pageTopY, pageBottomY]
+            val pageStrokes = strokeBoxes
+                .filter { box -> box.maxY > pageTopY && box.minY < pageBottomY }
+                .map { it.stroke }
 
             pages.add(
                 PdfPagePartition(
                     pageIndex = pageIndex,
-                    worldTopY = currentTopY,
-                    worldBottomY = nominalBottomY,
+                    worldTopY = pageTopY,
+                    worldBottomY = pageBottomY,
                     strokes = pageStrokes
                 )
             )
-
-            pageIndex++
-
-            if (remaining.isNotEmpty()) {
-                // Next page starts at the minimum Y of all remaining strokes
-                // (which includes the overlapping strokes that were deferred)
-                currentTopY = remaining.minOf { it.minY }
-            }
         }
 
         return pages

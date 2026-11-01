@@ -110,7 +110,7 @@ class BigNoteExportAndStorageTest {
     }
 
     @Test
-    fun testPdfPagePaginator_overlapRuleStrokesRepeatedOnBothPages() {
+    fun testPdfPagePaginator_fixedPageIntervalsAndCutoffAtBoundaries() {
         // Usable dimensions for US Letter (612x792, margin 36pt -> usable 540x720, scale = 540/1200 = 0.45)
         // World page height = 720 / 0.45 = 1600 world units.
         val stroke1 = Stroke(
@@ -125,7 +125,7 @@ class BigNoteExportAndStorageTest {
             tone = PencilTone.INK_BLACK,
             baseWidth = 4f
         )
-        // Stroke 3 spans across the nominal break at Y=1600 (minY ~ 1550, maxY ~ 1680)
+        // Stroke 3 spans across the page break at Y=1600 (minY ~ 1550, maxY ~ 1680)
         val stroke3Overlapping = Stroke(
             id = "stroke_overlapping_3",
             points = listOf(StrokePoint(100f, 1550f, 0.5f, 0L), StrokePoint(200f, 1680f, 0.5f, 10L)),
@@ -146,27 +146,26 @@ class BigNoteExportAndStorageTest {
 
         assertEquals("Must paginate into 2 pages", 2, pages.size)
 
-        // PAGE 1:
+        // PAGE 1: spans exactly [0, 1600]
         val page1 = pages[0]
         val page1Ids = page1.strokes.map { it.id }
         assertTrue("Page 1 must contain stroke 1", page1Ids.contains("stroke_top_1"))
         assertTrue("Page 1 must contain stroke 2", page1Ids.contains("stroke_middle_2"))
-        assertTrue("STRICT RULE: Overlapping stroke must appear on page 1", page1Ids.contains("stroke_overlapping_3"))
+        assertTrue("Overlapping stroke must appear on page 1 (cut off at bottom boundary)", page1Ids.contains("stroke_overlapping_3"))
         assertFalse("Page 1 must not contain future stroke 4", page1Ids.contains("stroke_page2_4"))
+        assertEquals("Page 1 worldTopY must be 0f", 0f, page1.worldTopY, 0.001f)
+        assertEquals("Page 1 worldBottomY must be 1600f", 1600f, page1.worldBottomY, 0.001f)
 
-        // PAGE 2:
+        // PAGE 2: spans exactly [1600, 3200]
         val page2 = pages[1]
         val page2Ids = page2.strokes.map { it.id }
-        assertTrue("STRICT RULE: Overlapping stroke must ALSO appear on page 2 (repeated on both pages)", page2Ids.contains("stroke_overlapping_3"))
+        assertTrue("Overlapping stroke must ALSO appear on page 2 (cut off at top boundary)", page2Ids.contains("stroke_overlapping_3"))
         assertTrue("Page 2 must contain subsequent stroke 4", page2Ids.contains("stroke_page2_4"))
         assertFalse("Page 2 must not contain page 1 stroke 1", page2Ids.contains("stroke_top_1"))
 
-        // Verify page 2 start Y anchors at or before stroke 3's top, avoiding any top clipping
-        val stroke3Bounds = PdfPagePaginator.calculateStrokeBounds(stroke3Overlapping)
-        assertTrue(
-            "Page 2 worldTopY (${page2.worldTopY}) must be <= stroke 3 minY (${stroke3Bounds.minY})",
-            page2.worldTopY <= stroke3Bounds.minY
-        )
+        // 1:1 Canvas Parity: Page 2 starts exactly at 1600f, without shifting down by stroke minY
+        assertEquals("Page 2 worldTopY must be exactly 1600f", 1600f, page2.worldTopY, 0.001f)
+        assertEquals("Page 2 worldBottomY must be exactly 3200f", 3200f, page2.worldBottomY, 0.001f)
     }
 
     @Test
