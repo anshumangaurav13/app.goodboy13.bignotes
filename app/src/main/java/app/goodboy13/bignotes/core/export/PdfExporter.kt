@@ -2,6 +2,8 @@ package app.goodboy13.bignotes.core.export
 
 import android.content.Context
 import android.graphics.*
+import android.graphics.BlendMode
+import android.os.Build
 import android.graphics.pdf.PdfDocument
 import app.goodboy13.bignotes.core.model.PaperColor
 import app.goodboy13.bignotes.core.model.Stroke
@@ -35,13 +37,12 @@ object PdfExporter {
         val outputFile = File(exportDir, "${sanitizedTitle}_${System.currentTimeMillis()}.pdf")
 
         val pdfDocument = PdfDocument()
-        val pages = PdfPagePaginator.paginate(strokes, options.pageFormat, images = images)
-        val totalPages = pages.size
-
         val pageFormat = options.pageFormat
+        val marginPt = options.marginPt
+        val pages = PdfPagePaginator.paginate(strokes, options.pageFormat, marginPt = marginPt, images = images)
+        val totalPages = pages.size
         val widthPt = pageFormat.widthPt
         val heightPt = pageFormat.heightPt
-        val marginPt = PdfPagePaginator.MARGIN_PT
 
         val usableWidthPt = widthPt - (2 * marginPt)
         val scale = usableWidthPt / PdfPagePaginator.CANONICAL_WIDTH
@@ -59,9 +60,15 @@ object PdfExporter {
             style = Paint.Style.FILL
         }
         val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = 8.5f
-            color = 0xFF888888.toInt()
+            textSize = 9.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = Color.WHITE
             textAlign = Paint.Align.CENTER
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                blendMode = BlendMode.DIFFERENCE
+            } else {
+                xfermode = PorterDuffXfermode(PorterDuff.Mode.XOR)
+            }
         }
 
         val rasterizer = if (options.renderMode == PdfRenderMode.RASTER_300DPI || options.renderMode == PdfRenderMode.HYBRID) {
@@ -105,7 +112,8 @@ object PdfExporter {
                     rasterizer.renderPagePartition(
                         canvas, partition, pageFormat, ::resolvePdfStrokeColor,
                         clearWhite = true,
-                        images = images
+                        images = images,
+                        marginPt = marginPt
                     )
                 } else {
                     if (images.isNotEmpty()) {
@@ -145,12 +153,14 @@ object PdfExporter {
                 }
                 canvas.restore()
 
-                // 3. Page Number Footer (Subtle, bottom center, zero shift to page boundaries)
+                // 3. Page Number Footer (Independent of margins, in negative color for maximum contrast)
                 if (options.includePageNumbers) {
+                    val x = widthPt * 0.5f
+                    val y = heightPt - 18f // Constant anchor relative to physical bottom edge
                     canvas.drawText(
                         "${partition.pageIndex + 1}",
-                        widthPt * 0.5f,
-                        heightPt - (marginPt * 0.40f),
+                        x,
+                        y,
                         footerPaint
                     )
                 }

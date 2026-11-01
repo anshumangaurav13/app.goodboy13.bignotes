@@ -195,9 +195,9 @@ class GlPageRasterizer(private val context: Context) : AutoCloseable {
         colorResolver: (Stroke) -> Int,
         filterStroke: (Stroke) -> Boolean = { true },
         clearWhite: Boolean = true,
-        images: List<app.goodboy13.bignotes.core.model.CanvasImage> = emptyList()
+        images: List<app.goodboy13.bignotes.core.model.CanvasImage> = emptyList(),
+        marginPt: Float = PdfPagePaginator.MARGIN_PT
     ) {
-        val marginPt = PdfPagePaginator.MARGIN_PT
         val usableWidthPt = pageFormat.widthPt - (2 * marginPt)
         val usableHeightPt = pageFormat.heightPt - (2 * marginPt)
         val scale = usableWidthPt / PdfPagePaginator.CANONICAL_WIDTH

@@ -5,9 +5,21 @@ enum class PageFormat(
     val widthPt: Int,
     val heightPt: Int
 ) {
-    LEGAL_14("Legal 14\" (8.5 × 14 in)", 612, 1008),
+    LEGAL_14("Legal 14 in (8.5 × 14 in)", 612, 1008),
     LETTER("Letter (8.5 × 11 in)", 612, 792),
     A4("A4 (210 × 297 mm)", 595, 842)
+}
+
+enum class PdfMargin(
+    val shortName: String,
+    val displayName: String,
+    val description: String,
+    val marginPt: Float
+) {
+    NONE("None", "None (Full Bleed)", "Full bleed (0 in) – exact canvas edges", 0f),
+    SMALL("Small", "Small (Narrow)", "Narrow margins (0.25 in / 6.35 mm)", 18f),
+    MEDIUM("Medium", "Medium (Normal)", "Standard margins (0.5 in / 12.7 mm)", 36f),
+    LARGE("Large", "Large (Wide)", "Wide margins (0.75 in / 19.05 mm)", 54f)
 }
 
 enum class PdfRenderMode(
@@ -21,7 +33,10 @@ enum class PdfRenderMode(
 
 data class PdfExportOptions(
     val pageFormat: PageFormat = PageFormat.A4,
+    val margin: PdfMargin = PdfMargin.NONE,
     val renderMode: PdfRenderMode = PdfRenderMode.RASTER_300DPI,
     val embedSearchableText: Boolean = true,
     val includePageNumbers: Boolean = true
-)
+) {
+    val marginPt: Float get() = margin.marginPt
+}

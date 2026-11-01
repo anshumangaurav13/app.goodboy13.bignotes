@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import app.goodboy13.bignotes.core.export.PageFormat
+import app.goodboy13.bignotes.core.export.PdfMargin
 import app.goodboy13.bignotes.core.export.PdfExportOptions
 import app.goodboy13.bignotes.core.export.PdfRenderMode
 
@@ -35,10 +36,12 @@ fun ExportPdfDialog(
     strokeCount: Int,
     isExporting: Boolean,
     initialFormat: PageFormat = PageFormat.A4,
+    initialMargin: PdfMargin = PdfMargin.NONE,
     initialMode: PdfRenderMode = PdfRenderMode.RASTER_300DPI,
     initialIncludePageNumbers: Boolean = true,
     initialExportFormat: ExportFormat = ExportFormat.PDF,
     onFormatChanged: ((PageFormat) -> Unit)? = null,
+    onMarginChanged: ((PdfMargin) -> Unit)? = null,
     onModeChanged: ((PdfRenderMode) -> Unit)? = null,
     onIncludePageNumbersChanged: ((Boolean) -> Unit)? = null,
     onExport: (PdfExportOptions) -> Unit,
@@ -47,6 +50,7 @@ fun ExportPdfDialog(
 ) {
     var selectedExportFormat by remember { mutableStateOf(initialExportFormat) }
     var selectedFormat by remember { mutableStateOf(initialFormat) }
+    var selectedMargin by remember { mutableStateOf(initialMargin) }
     var selectedMode by remember { mutableStateOf(initialMode) }
     var embedSearchableText by remember { mutableStateOf(true) }
     var includePageNumbers by remember { mutableStateOf(initialIncludePageNumbers) }
@@ -172,6 +176,55 @@ fun ExportPdfDialog(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Margin Selection (None, Small, Medium, Large)
+                    Text(
+                        text = "Margins",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(3.dp)
+                    ) {
+                        for (m in PdfMargin.values()) {
+                            val isSelected = selectedMargin == m
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        selectedMargin = m
+                                        onMarginChanged?.invoke(m)
+                                    }
+                            ) {
+                                Text(
+                                    text = m.shortName,
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        fontSize = 11.5.sp
+                                    ),
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = selectedMargin.description,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -354,6 +407,7 @@ fun ExportPdfDialog(
                                 onExport(
                                     PdfExportOptions(
                                         pageFormat = selectedFormat,
+                                        margin = selectedMargin,
                                         renderMode = selectedMode,
                                         embedSearchableText = embedSearchableText,
                                         includePageNumbers = includePageNumbers

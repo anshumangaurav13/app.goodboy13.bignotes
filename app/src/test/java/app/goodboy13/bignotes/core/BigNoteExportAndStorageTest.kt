@@ -179,6 +179,33 @@ class BigNoteExportAndStorageTest {
     }
 
     @Test
+    fun testPdfMargin_presetsAndValues() {
+        assertEquals(0f, app.goodboy13.bignotes.core.export.PdfMargin.NONE.marginPt, 0.001f)
+        assertEquals(18f, app.goodboy13.bignotes.core.export.PdfMargin.SMALL.marginPt, 0.001f)
+        assertEquals(36f, app.goodboy13.bignotes.core.export.PdfMargin.MEDIUM.marginPt, 0.001f)
+        assertEquals(54f, app.goodboy13.bignotes.core.export.PdfMargin.LARGE.marginPt, 0.001f)
+    }
+
+    @Test
+    fun testPdfPagePaginator_noneMarginFullBleed() {
+        val stroke = Stroke(
+            id = "stroke_1",
+            points = listOf(StrokePoint(0f, 0f, 0.5f, 0L), StrokePoint(1200f, 1600f, 0.5f, 10L)),
+            tone = PencilTone.INK_BLACK,
+            baseWidth = 4f
+        )
+        val pages = PdfPagePaginator.paginate(
+            strokes = listOf(stroke),
+            pageFormat = PageFormat.A4,
+            marginPt = 0f
+        )
+        assertEquals(1, pages.size)
+        val expectedHeight = 1200f * (842f / 595f)
+        assertEquals(expectedHeight, pages[0].worldBottomY, 0.01f)
+        assertEquals(0f, pages[0].worldTopY, 0.001f)
+    }
+
+    @Test
     fun testBigNoteBinaryFormat_recognizedTextBlocksRoundTrip() {
         val stroke = Stroke(
             id = "stroke_txt_1",

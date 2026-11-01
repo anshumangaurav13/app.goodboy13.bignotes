@@ -40,6 +40,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import app.goodboy13.bignotes.core.export.PdfExporter
 import app.goodboy13.bignotes.core.export.PageFormat
+import app.goodboy13.bignotes.core.export.PdfMargin
 import app.goodboy13.bignotes.core.export.PdfRenderMode
 import app.goodboy13.bignotes.core.gl.SketchCanvasView
 import app.goodboy13.bignotes.core.storage.NoteStorageManager
@@ -220,6 +221,10 @@ fun BigNotesMainScreen(
     var selectedPdfPageFormat by remember {
         val savedFormatName = prefs.getString("pdf_page_format", PageFormat.A4.name) ?: PageFormat.A4.name
         mutableStateOf(try { PageFormat.valueOf(savedFormatName) } catch (e: Exception) { PageFormat.A4 })
+    }
+    var selectedPdfMargin by remember {
+        val savedMarginName = prefs.getString("pdf_margin", PdfMargin.NONE.name) ?: PdfMargin.NONE.name
+        mutableStateOf(try { PdfMargin.valueOf(savedMarginName) } catch (e: Exception) { PdfMargin.NONE })
     }
     var selectedPdfRenderMode by remember {
         val savedModeName = prefs.getString("pdf_render_mode", PdfRenderMode.RASTER_300DPI.name) ?: PdfRenderMode.RASTER_300DPI.name
@@ -967,7 +972,7 @@ fun BigNotesMainScreen(
                 boundView.eraserRadius = eraserRadius
                 boundView.renderer.inkBleedConfig = inkBleedConfig
 
-                boundView.renderer.worldPageHeight = app.goodboy13.bignotes.core.export.PdfPagePaginator.getWorldPageHeight(selectedPdfPageFormat)
+                boundView.renderer.worldPageHeight = app.goodboy13.bignotes.core.export.PdfPagePaginator.getWorldPageHeight(selectedPdfPageFormat, selectedPdfMargin.marginPt)
             },
             onStrokesChanged = { strokes ->
                 selectedNoteId?.let { id ->
@@ -1379,7 +1384,7 @@ fun BigNotesMainScreen(
                     if (inMemStrokes != null && inMemStrokes.isNotEmpty()) {
                         app.goodboy13.bignotes.core.export.PdfPagePaginator.paginate(inMemStrokes, selectedPdfPageFormat).size
                     } else {
-                        val worldH = app.goodboy13.bignotes.core.export.PdfPagePaginator.getWorldPageHeight(selectedPdfPageFormat)
+                        val worldH = app.goodboy13.bignotes.core.export.PdfPagePaginator.getWorldPageHeight(selectedPdfPageFormat, selectedPdfMargin.marginPt)
                         if (note.maxY <= 0f || note.strokeCount == 0) 1 else kotlin.math.max(1, kotlin.math.ceil(note.maxY / worldH).toInt())
                     }
                 },
@@ -1533,11 +1538,18 @@ fun BigNotesMainScreen(
             strokeCount = targetStrokes.size,
             isExporting = isExporting,
             initialFormat = selectedPdfPageFormat,
+            initialMargin = selectedPdfMargin,
             initialMode = selectedPdfRenderMode,
             initialIncludePageNumbers = includePdfPageNumbers,
             onFormatChanged = { format ->
                 selectedPdfPageFormat = format
                 prefs.edit().putString("pdf_page_format", format.name).apply()
+                canvasView?.renderer?.worldPageHeight = app.goodboy13.bignotes.core.export.PdfPagePaginator.getWorldPageHeight(format, selectedPdfMargin.marginPt)
+            },
+            onMarginChanged = { margin ->
+                selectedPdfMargin = margin
+                prefs.edit().putString("pdf_margin", margin.name).apply()
+                canvasView?.renderer?.worldPageHeight = app.goodboy13.bignotes.core.export.PdfPagePaginator.getWorldPageHeight(selectedPdfPageFormat, margin.marginPt)
             },
             onModeChanged = { mode ->
                 selectedPdfRenderMode = mode
@@ -1549,13 +1561,16 @@ fun BigNotesMainScreen(
             },
             onExport = { exportOptions ->
                 selectedPdfPageFormat = exportOptions.pageFormat
+                selectedPdfMargin = exportOptions.margin
                 selectedPdfRenderMode = exportOptions.renderMode
                 includePdfPageNumbers = exportOptions.includePageNumbers
                 prefs.edit()
                     .putString("pdf_page_format", exportOptions.pageFormat.name)
+                    .putString("pdf_margin", exportOptions.margin.name)
                     .putString("pdf_render_mode", exportOptions.renderMode.name)
                     .putBoolean("pdf_include_page_numbers", exportOptions.includePageNumbers)
                     .apply()
+                canvasView?.renderer?.worldPageHeight = app.goodboy13.bignotes.core.export.PdfPagePaginator.getWorldPageHeight(exportOptions.pageFormat, exportOptions.margin.marginPt)
                 coroutineScope.launch {
                     try {
                         isExporting = true
