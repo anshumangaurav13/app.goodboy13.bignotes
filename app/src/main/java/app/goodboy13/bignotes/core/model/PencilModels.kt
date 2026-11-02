@@ -7,7 +7,7 @@ enum class PencilTone(val id: Int, val displayName: String, val colorRgb: Long, 
     SOFT(1, "2B", 0xFF1E2226, false),
     LIGHT(2, "Highlight", 0xFFFFFDF5, false),
     INK_BLACK(3, "Carbon Black", 0xFF000000, true),
-    INK_BLUE(4, "Midnight Blue", 0xFF0020FF, true),
+    INK_BLUE(4, "Midnight Blue", 0xFF0018C8, true),
     INK_RED(5, "Oxblood Red", 0xFFDC2626, true)
 }
 

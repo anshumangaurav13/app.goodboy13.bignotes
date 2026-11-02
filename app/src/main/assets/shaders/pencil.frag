@@ -108,14 +108,7 @@ void main() {
             finalAlpha = coreAlpha * (1.0 + rimDarkening * 0.55);
             outRgb = mix(outRgb, outRgb * 0.70, rimDarkening * 0.40);
 
-            // Wet liquid specular sheen along centerline: subtle gloss, never bleach black ink to chalk
-            if (u_WetSheen > 0.001) {
-                float luminance = dot(outRgb, vec3(0.299, 0.587, 0.114));
-                if (luminance > 0.12) {
-                    float sheen = pow(max(1.0 - coreRatio, 0.0), 3.0) * u_WetSheen;
-                    outRgb = mix(outRgb, vec3(1.0), sheen * 0.25 * luminance);
-                }
-            }
+            // Wet liquid specular sheen along centerline disabled for subtractive ink to prevent core washout
         } else {
             // Relative bleed width: fraction of nominal stroke radius
             float maxBleed = max(1.0 - effectiveNominalDist - safeDelta * 0.5, 1e-4);

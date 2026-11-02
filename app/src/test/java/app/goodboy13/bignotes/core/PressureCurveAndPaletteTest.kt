@@ -43,8 +43,8 @@ class PressureCurveAndPaletteTest {
         // Canonical colors (used for both light and inverted dark mode via GL shader)
         val colors = InkPalette.getColors()
         assertEquals(6, colors.size)
-        // Slot 3 is Royal Blue (#0020FF)
-        assertEquals(0xFF0020FFL, colors[3].colorRgb)
+        // Slot 3 is Royal Blue (#0018C8)
+        assertEquals(0xFF0018C8L, colors[3].colorRgb)
         assertEquals("Royal Blue", colors[3].name)
 
         // Highlighter palette: 3 curated colors
