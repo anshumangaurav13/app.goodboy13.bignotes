@@ -33,6 +33,26 @@ private enum class DragMode {
     NONE, MOVE, SCALE, ROTATE, CROP_HANDLE
 }
 
+/**
+ * Explicit interaction state for image transformation and cropping gestures.
+ */
+private sealed class ImageGestureState {
+    object Idle : ImageGestureState()
+    data class SinglePointer(
+        val mode: DragMode,
+        val handleIndex: Int,
+        val startImage: CanvasImage,
+        val startWorldPoint: PointF,
+        val startScreenPoint: Offset
+    ) : ImageGestureState()
+    data class TwoFinger(
+        val baseImage: CanvasImage,
+        val baseCentroid: Offset,
+        val baseDist: Float,
+        val baseAngle: Float
+    ) : ImageGestureState()
+}
+
 @Composable
 fun ImageManipulationOverlay(
     selectedImage: CanvasImage?,
@@ -211,11 +231,17 @@ fun ImageManipulationOverlay(
                         }
                     }
 
-                    var twoFingerBaseImage = img
-                    var twoFingerBaseDist = 0f
-                    var twoFingerBaseAngle = 0f
-                    var twoFingerBaseCentroid = Offset.Zero
-                    var isTwoFingerActive = false
+                    var gestureState: ImageGestureState = if (dragMode != DragMode.NONE) {
+                        ImageGestureState.SinglePointer(
+                            mode = dragMode,
+                            handleIndex = activeHandleIndex,
+                            startImage = dragStartImage,
+                            startWorldPoint = dragStartWorldPoint,
+                            startScreenPoint = dragStartScreenPoint
+                        )
+                    } else {
+                        ImageGestureState.Idle
+                    }
                     var currentLiveImage = img
                     var hasMoved = false
 
@@ -232,20 +258,22 @@ fun ImageManipulationOverlay(
                             val curAngle = atan2((p2.y - p1.y).toDouble(), (p2.x - p1.x).toDouble()).toFloat()
                             val curCentroid = (p1 + p2) * 0.5f
 
-                            if (!isTwoFingerActive) {
-                                isTwoFingerActive = true
-                                twoFingerBaseImage = currentLiveImage
-                                twoFingerBaseDist = max(curDist, 10f)
-                                twoFingerBaseAngle = curAngle
-                                twoFingerBaseCentroid = curCentroid
+                            val twoFingerState = gestureState as? ImageGestureState.TwoFinger
+                            if (twoFingerState == null) {
+                                gestureState = ImageGestureState.TwoFinger(
+                                    baseImage = currentLiveImage,
+                                    baseDist = max(curDist, 10f),
+                                    baseAngle = curAngle,
+                                    baseCentroid = curCentroid
+                                )
                             } else {
                                 hasMoved = true
-                                val scaleFactor = (curDist / twoFingerBaseDist).coerceIn(0.05f, 20.0f)
-                                val newW = (twoFingerBaseImage.width * scaleFactor).coerceIn(30f, 10000f)
-                                val newH = (twoFingerBaseImage.height * scaleFactor).coerceIn(30f, 10000f)
+                                val scaleFactor = (curDist / twoFingerState.baseDist).coerceIn(0.05f, 20.0f)
+                                val newW = (twoFingerState.baseImage.width * scaleFactor).coerceIn(30f, 10000f)
+                                val newH = (twoFingerState.baseImage.height * scaleFactor).coerceIn(30f, 10000f)
 
-                                val angleDiff = curAngle - twoFingerBaseAngle
-                                var newDeg = twoFingerBaseImage.rotationDegrees + Math.toDegrees(angleDiff.toDouble()).toFloat()
+                                val angleDiff = curAngle - twoFingerState.baseAngle
+                                var newDeg = twoFingerState.baseImage.rotationDegrees + Math.toDegrees(angleDiff.toDouble()).toFloat()
                                 newDeg = ((newDeg % 360f) + 360f) % 360f
 
                                 val snapTargets = floatArrayOf(0f, 90f, 180f, 270f, 360f)
@@ -256,12 +284,12 @@ fun ImageManipulationOverlay(
                                     }
                                 }
 
-                                val (baseWx, baseWy) = view.screenToWorld(twoFingerBaseCentroid.x, twoFingerBaseCentroid.y)
+                                val (baseWx, baseWy) = view.screenToWorld(twoFingerState.baseCentroid.x, twoFingerState.baseCentroid.y)
                                 val (curWx, curWy) = view.screenToWorld(curCentroid.x, curCentroid.y)
-                                val newCx = twoFingerBaseImage.centerX + (curWx - baseWx)
-                                val newCy = twoFingerBaseImage.centerY + (curWy - baseWy)
+                                val newCx = twoFingerState.baseImage.centerX + (curWx - baseWx)
+                                val newCy = twoFingerState.baseImage.centerY + (curWy - baseWy)
 
-                                val updated = twoFingerBaseImage.copy(
+                                val updated = twoFingerState.baseImage.copy(
                                     centerX = newCx,
                                     centerY = newCy,
                                     width = newW,
@@ -272,7 +300,7 @@ fun ImageManipulationOverlay(
                                 onUpdateImageLive(updated)
                             }
                             event.changes.forEach { it.consume() }
-                        } else if (activePointers.size == 1 && !isTwoFingerActive) {
+                        } else if (activePointers.size == 1 && gestureState !is ImageGestureState.TwoFinger) {
                             val change = activePointers[0]
                             val curScreen = change.position
                             val (curWx, curWy) = view.screenToWorld(curScreen.x, curScreen.y)
@@ -368,7 +396,7 @@ fun ImageManipulationOverlay(
                     }
 
                     // Gesture finished: commit
-                    if (isTwoFingerActive) {
+                    if (gestureState is ImageGestureState.TwoFinger) {
                         if (currentLiveImage != dragStartImage) {
                             onUpdateImage(dragStartImage, currentLiveImage)
                         }
@@ -380,6 +408,7 @@ fun ImageManipulationOverlay(
                         onDeselect()
                     }
                     dragMode = DragMode.NONE
+                    gestureState = ImageGestureState.Idle
                 }
             }
     ) {

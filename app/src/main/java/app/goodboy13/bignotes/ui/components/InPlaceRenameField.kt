@@ -26,8 +26,17 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 
 /**
+ * Explicit state model for inline text field renaming.
+ */
+sealed class RenameFieldState {
+    object Editing : RenameFieldState()
+    object Finalized : RenameFieldState()
+}
+
+/**
  * Clean inline, in-place text editor.
  * Replaces static text with an editable input field when renaming without opening a modal dialog.
+ * Managed by an explicit [RenameFieldState] machine preventing duplicate commits.
  */
 @Composable
 fun InPlaceRenameField(
@@ -37,6 +46,7 @@ fun InPlaceRenameField(
     modifier: Modifier = Modifier,
     textStyle: TextStyle = MaterialTheme.typography.bodyMedium
 ) {
+    var editState by remember { mutableStateOf<RenameFieldState>(RenameFieldState.Editing) }
     var textFieldValue by remember {
         mutableStateOf(
             TextFieldValue(
@@ -51,6 +61,21 @@ fun InPlaceRenameField(
         focusRequester.requestFocus()
     }
 
+    val tryCommit: () -> Unit = {
+        if (editState is RenameFieldState.Editing) {
+            editState = RenameFieldState.Finalized
+            val trimmed = textFieldValue.text.trim()
+            if (trimmed.isNotEmpty()) onCommit(trimmed) else onCancel()
+        }
+    }
+
+    val tryCancel: () -> Unit = {
+        if (editState is RenameFieldState.Editing) {
+            editState = RenameFieldState.Finalized
+            onCancel()
+        }
+    }
+
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(4.dp))
@@ -60,7 +85,7 @@ fun InPlaceRenameField(
     ) {
         BasicTextField(
             value = textFieldValue,
-            onValueChange = { textFieldValue = it },
+            onValueChange = { if (editState is RenameFieldState.Editing) textFieldValue = it },
             modifier = Modifier
                 .weight(1f)
                 .focusRequester(focusRequester),
@@ -71,18 +96,12 @@ fun InPlaceRenameField(
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(
-                onDone = {
-                    val trimmed = textFieldValue.text.trim()
-                    if (trimmed.isNotEmpty()) onCommit(trimmed) else onCancel()
-                }
+                onDone = { tryCommit() }
             )
         )
 
         IconButton(
-            onClick = {
-                val trimmed = textFieldValue.text.trim()
-                if (trimmed.isNotEmpty()) onCommit(trimmed) else onCancel()
-            },
+            onClick = { tryCommit() },
             modifier = Modifier.size(26.dp)
         ) {
             Icon(
@@ -94,7 +113,7 @@ fun InPlaceRenameField(
         }
 
         IconButton(
-            onClick = onCancel,
+            onClick = { tryCancel() },
             modifier = Modifier.size(26.dp)
         ) {
             Icon(

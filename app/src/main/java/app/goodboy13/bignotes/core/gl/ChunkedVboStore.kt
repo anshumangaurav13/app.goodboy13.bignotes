@@ -9,6 +9,16 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
 /**
+ * Explicit lifecycle state for a GPU-resident VBO chunk.
+ */
+enum class ChunkState {
+    OPEN_APPENDING,
+    SEALED_DIRTY,
+    GPU_UPLOADED,
+    DISCARDED
+}
+
+/**
  * GPU-resident VBO chunk that holds up to [CHUNK_MAX_VERTICES] vertices in GL VRAM.
  * Tracks world-space AABB for fast viewport frustum culling.
  */
@@ -21,9 +31,27 @@ class VboChunk(
     var minY: Float = Float.POSITIVE_INFINITY,
     var maxX: Float = Float.NEGATIVE_INFINITY,
     var maxY: Float = Float.NEGATIVE_INFINITY,
-    var isDirty: Boolean = true,
-    var isSealed: Boolean = false
+    var state: ChunkState = ChunkState.OPEN_APPENDING
 ) {
+    var isDirty: Boolean
+        get() = state == ChunkState.OPEN_APPENDING || state == ChunkState.SEALED_DIRTY
+        set(value) {
+            state = if (value) {
+                if (state == ChunkState.GPU_UPLOADED || state == ChunkState.SEALED_DIRTY) ChunkState.SEALED_DIRTY else ChunkState.OPEN_APPENDING
+            } else {
+                ChunkState.GPU_UPLOADED
+            }
+        }
+
+    var isSealed: Boolean
+        get() = state == ChunkState.SEALED_DIRTY || state == ChunkState.GPU_UPLOADED
+        set(value) {
+            state = if (value) {
+                if (state == ChunkState.GPU_UPLOADED) ChunkState.GPU_UPLOADED else ChunkState.SEALED_DIRTY
+            } else {
+                ChunkState.OPEN_APPENDING
+            }
+        }
     fun containsStroke(id: String): Boolean = strokes.any { it.id == id }
 
     fun intersects(bMinX: Float, bMinY: Float, bMaxX: Float, bMaxY: Float): Boolean {

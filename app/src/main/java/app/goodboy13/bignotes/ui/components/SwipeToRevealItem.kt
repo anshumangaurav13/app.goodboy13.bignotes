@@ -37,7 +37,17 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * Bidirectional swipe-to-reveal container:
+ * Explicit state model for bidirectional swipe-to-reveal items.
+ */
+sealed class SwipeRevealState {
+    object Closed : SwipeRevealState()
+    object ActionRevealed : SwipeRevealState()
+    object DeleteRevealed : SwipeRevealState()
+    data class ConfirmingDelete(val expiresAtMs: Long) : SwipeRevealState()
+}
+
+/**
+ * Bidirectional swipe-to-reveal container governed by an explicit [SwipeRevealState] machine:
  * - Swiping left reveals the red Delete button with 3-second blinking confirmation.
  * - Swiping right reveals a custom action (e.g. PDF / Markdown Export) on the left.
  */
@@ -57,32 +67,30 @@ fun SwipeToRevealItem(
     val offsetX = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
 
-    val isDeleteRevealed = offsetX.value < -1f
-    val isActionRevealed = offsetX.value > 1f
-    val isRevealed = isDeleteRevealed || isActionRevealed
+    var revealState by remember { mutableStateOf<SwipeRevealState>(SwipeRevealState.Closed) }
 
-    var isConfirmingDelete by remember { mutableStateOf(false) }
+    val isDeleteRevealed = revealState is SwipeRevealState.DeleteRevealed || revealState is SwipeRevealState.ConfirmingDelete
+    val isActionRevealed = revealState is SwipeRevealState.ActionRevealed
+    val isRevealed = revealState !is SwipeRevealState.Closed
+    val isConfirmingDelete = revealState is SwipeRevealState.ConfirmingDelete
 
-    // If delete button is closed, reset confirmation state
-    LaunchedEffect(isDeleteRevealed) {
-        if (!isDeleteRevealed) {
-            isConfirmingDelete = false
-        }
-    }
-
-    // 3-second countdown when delete confirmation begins
-    LaunchedEffect(isConfirmingDelete) {
-        if (isConfirmingDelete) {
-            delay(3000L)
-            coroutineScope.launch {
-                offsetX.animateTo(
-                    targetValue = 0f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMedium
+    // 3-second auto-expiration countdown for delete confirmation
+    LaunchedEffect(revealState) {
+        val current = revealState
+        if (current is SwipeRevealState.ConfirmingDelete) {
+            val remaining = (current.expiresAtMs - System.currentTimeMillis()).coerceAtLeast(0L)
+            delay(remaining)
+            if (revealState is SwipeRevealState.ConfirmingDelete) {
+                coroutineScope.launch {
+                    offsetX.animateTo(
+                        targetValue = 0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMedium
+                        )
                     )
-                )
-                isConfirmingDelete = false
+                    revealState = SwipeRevealState.Closed
+                }
             }
         }
     }
@@ -112,12 +120,12 @@ fun SwipeToRevealItem(
                     .matchParentSize()
                     .background(Color(0xFFE53935).copy(alpha = bgAlpha))
                     .clickable {
-                        if (!isConfirmingDelete) {
+                        if (revealState !is SwipeRevealState.ConfirmingDelete) {
                             // First tap: start blinking for 3 seconds to await confirmation
-                            isConfirmingDelete = true
+                            revealState = SwipeRevealState.ConfirmingDelete(System.currentTimeMillis() + 3000L)
                         } else {
                             // Second tap within 3 seconds: confirm delete!
-                            isConfirmingDelete = false
+                            revealState = SwipeRevealState.Closed
                             coroutineScope.launch {
                                 offsetX.snapTo(0f)
                                 onDelete()
@@ -153,6 +161,7 @@ fun SwipeToRevealItem(
                     .clickable {
                         coroutineScope.launch {
                             offsetX.animateTo(0f)
+                            revealState = SwipeRevealState.Closed
                             onActionRight()
                         }
                     },
@@ -184,7 +193,9 @@ fun SwipeToRevealItem(
                 .pointerInput(onActionRight) {
                     detectHorizontalDragGestures(
                         onHorizontalDrag = { _, dragAmount ->
-                            isConfirmingDelete = false
+                            if (revealState is SwipeRevealState.ConfirmingDelete) {
+                                revealState = SwipeRevealState.DeleteRevealed
+                            }
                             val minOffset = -revealWidthPx
                             val maxOffset = if (onActionRight != null) revealWidthPx else 0f
                             val newOffset = (offsetX.value + dragAmount).coerceIn(minOffset, maxOffset)
@@ -203,6 +214,7 @@ fun SwipeToRevealItem(
                                             stiffness = Spring.StiffnessLow
                                         )
                                     )
+                                    revealState = SwipeRevealState.DeleteRevealed
                                 } else if (onActionRight != null && offsetX.value > revealWidthPx / 2) {
                                     // Snap open action on left
                                     offsetX.animateTo(
@@ -212,6 +224,7 @@ fun SwipeToRevealItem(
                                             stiffness = Spring.StiffnessLow
                                         )
                                     )
+                                    revealState = SwipeRevealState.ActionRevealed
                                 } else {
                                     // Snap closed
                                     offsetX.animateTo(
@@ -221,11 +234,12 @@ fun SwipeToRevealItem(
                                             stiffness = Spring.StiffnessMedium
                                         )
                                     )
+                                    revealState = SwipeRevealState.Closed
                                 }
                             }
                         },
                         onDragCancel = {
-                            isConfirmingDelete = false
+                            revealState = SwipeRevealState.Closed
                             coroutineScope.launch {
                                 offsetX.animateTo(0f)
                             }
@@ -241,7 +255,7 @@ fun SwipeToRevealItem(
                         modifier = Modifier
                             .matchParentSize()
                             .clickable {
-                                isConfirmingDelete = false
+                                revealState = SwipeRevealState.Closed
                                 coroutineScope.launch {
                                     offsetX.animateTo(0f)
                                 }

@@ -34,6 +34,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.core.content.FileProvider
 import app.goodboy13.bignotes.core.storage.BackupManager
+import app.goodboy13.bignotes.core.storage.AutoSaveCoordinator
 import app.goodboy13.bignotes.ui.settings.BackupTimelineDialog
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -321,9 +322,6 @@ fun BigNotesMainScreen(
         }
     }
 
-    var isPenDown by remember { mutableStateOf(false) }
-    var dirtyNoteId by remember { mutableStateOf<String?>(null) }
-    var saveJob by remember { mutableStateOf<Job?>(null) }
 
     val (initialFolders, initialNotes) = remember {
         noteStorageManager.initializeDefaultWorkspaceIfEmpty()
@@ -498,49 +496,40 @@ fun BigNotesMainScreen(
         }
     }
 
-    val scheduleDebouncedSave: () -> Unit = {
-        saveJob?.cancel()
-        saveJob = coroutineScope.launch {
-            delay(1000L) // Wait 1 second of inactivity after lifting pen
-            if (!isPenDown) {
-                val nId = dirtyNoteId ?: return@launch
-                val note = allNotes.find { it.id == nId } ?: return@launch
-                val strokesToSave = noteStrokes[nId] ?: emptyList()
-                val imagesToSave = canvasView?.getImages() ?: noteImages[nId] ?: emptyList()
-                val currentPanY = canvasView?.renderer?.panY ?: 0f
-                val now = System.currentTimeMillis()
-                val updatedNote = note.copy(updatedAt = now)
-                allNotes = allNotes.map { if (it.id == nId) updatedNote else it }
-                withContext(Dispatchers.IO) {
-                    noteStorageManager.saveNote(updatedNote, strokesToSave, zoomScale, scrollY = currentPanY, images = imagesToSave)
-                }
-                handwritingSearchManager.indexNoteAsync(nId, updatedNote.folderId, strokesToSave)
-                hasUnsavedChangesSinceLastSnapshot = true
-                dirtyNoteId = null
+    val performSaveNote: suspend (String) -> Unit = { nId ->
+        val note = allNotes.find { it.id == nId }
+        if (note != null) {
+            val strokesToSave = noteStrokes[nId] ?: emptyList()
+            val imagesToSave = canvasView?.getImages() ?: noteImages[nId] ?: emptyList()
+            val currentPanY = canvasView?.renderer?.panY ?: 0f
+            val now = System.currentTimeMillis()
+            val updatedNote = note.copy(updatedAt = now)
+            allNotes = allNotes.map { if (it.id == nId) updatedNote else it }
+            withContext(Dispatchers.IO) {
+                noteStorageManager.saveNote(updatedNote, strokesToSave, zoomScale, scrollY = currentPanY, images = imagesToSave)
             }
+            handwritingSearchManager.indexNoteAsync(nId, updatedNote.folderId, strokesToSave)
+            hasUnsavedChangesSinceLastSnapshot = true
+        }
+    }
+
+    val autoSaveCoordinator = remember {
+        AutoSaveCoordinator(
+            scope = coroutineScope,
+            debounceDelayMs = 1000L,
+            onPerformSave = { nId -> performSaveNote(nId) }
+        )
+    }
+
+    val scheduleDebouncedSave: () -> Unit = {
+        val currentId = selectedNoteId
+        if (currentId != null) {
+            autoSaveCoordinator.markDirty(currentId)
         }
     }
 
     val flushSaveNow: (String?) -> Unit = { targetId ->
-        val id = targetId ?: dirtyNoteId
-        if (id != null && id == dirtyNoteId) {
-            saveJob?.cancel()
-            val note = allNotes.find { it.id == id }
-            if (note != null) {
-                val strokesToSave = noteStrokes[id] ?: emptyList()
-                val imagesToSave = canvasView?.getImages() ?: noteImages[id] ?: emptyList()
-                val currentPanY = canvasView?.renderer?.panY ?: 0f
-                val now = System.currentTimeMillis()
-                val updatedNote = note.copy(updatedAt = now)
-                allNotes = allNotes.map { if (it.id == id) updatedNote else it }
-                coroutineScope.launch(Dispatchers.IO) {
-                    noteStorageManager.saveNote(updatedNote, strokesToSave, zoomScale, scrollY = currentPanY, images = imagesToSave)
-                }
-                handwritingSearchManager.indexNoteAsync(id, updatedNote.folderId, strokesToSave)
-                hasUnsavedChangesSinceLastSnapshot = true
-            }
-            dirtyNoteId = null
-        }
+        autoSaveCoordinator.flushNow(targetId)
     }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -574,8 +563,7 @@ fun BigNotesMainScreen(
 
                         view?.addImage(newImage)
                         selectedCanvasImage = newImage
-                        dirtyNoteId = noteId
-                        scheduleDebouncedSave()
+                        autoSaveCoordinator.markDirty(noteId)
                     }
                 }
             }
@@ -661,8 +649,7 @@ fun BigNotesMainScreen(
         val uriStr = backupFolderUriString
         if (uriStr != null) {
             val treeUri = Uri.parse(uriStr)
-            saveJob?.cancel()
-            dirtyNoteId = null
+            autoSaveCoordinator.cancel()
             isRestoreInProgress = true
             coroutineScope.launch(Dispatchers.IO) {
                 val result = BackupManager.restoreSnapshot(context, treeUri, snapshotId, noteStorageManager)
@@ -670,8 +657,7 @@ fun BigNotesMainScreen(
                     isRestoreInProgress = false
                     showTimelineDialog = false
                     if (result.success) {
-                        saveJob?.cancel()
-                        dirtyNoteId = null
+                        autoSaveCoordinator.cancel()
                         folders = result.restoredFolders
                         allNotes = result.restoredNotes
                         for (note in result.restoredNotes) {
@@ -698,8 +684,7 @@ fun BigNotesMainScreen(
         val uriStr = backupFolderUriString
         if (uriStr != null) {
             val treeUri = Uri.parse(uriStr)
-            saveJob?.cancel()
-            dirtyNoteId = null
+            autoSaveCoordinator.cancel()
             isRestoreInProgress = true
             coroutineScope.launch(Dispatchers.IO) {
                 val result = BackupManager.cherryPickNote(context, treeUri, snapshotId, noteId, noteStorageManager)
@@ -983,21 +968,11 @@ fun BigNotesMainScreen(
                             note.copy(updatedAt = System.currentTimeMillis())
                         } else note
                     }
-                    dirtyNoteId = id
-                    if (!isPenDown) {
-                        scheduleDebouncedSave()
-                    }
+                    autoSaveCoordinator.markDirty(id)
                 }
             },
             onPenContactChanged = { down ->
-                isPenDown = down
-                if (down) {
-                    saveJob?.cancel()
-                } else {
-                    if (dirtyNoteId != null) {
-                        scheduleDebouncedSave()
-                    }
-                }
+                autoSaveCoordinator.onPenContactChanged(down, selectedNoteId)
             },
             selectedImage = selectedCanvasImage,
             onSelectedImageChange = { selectedCanvasImage = it },

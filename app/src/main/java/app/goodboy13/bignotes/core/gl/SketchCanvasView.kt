@@ -16,6 +16,7 @@ import androidx.graphics.lowlatency.GLFrontBufferedRenderer
 import app.goodboy13.bignotes.core.clipboard.StrokeClipboard
 import app.goodboy13.bignotes.core.color.CanvasColorSampler
 import app.goodboy13.bignotes.core.eraser.EraserEngine
+import app.goodboy13.bignotes.core.eraser.EraserSession
 import app.goodboy13.bignotes.core.eraser.SpatialStrokeIndex
 import app.goodboy13.bignotes.core.geometry.DabGenerator
 import app.goodboy13.bignotes.core.geometry.StrokeTessellator
@@ -138,8 +139,6 @@ class SketchCanvasView @JvmOverloads constructor(
 
     var holdToEraseEnabled: Boolean = true
     var holdToEraseDelayMs: Long = 350L
-    var isHoldToEraseActive: Boolean = false
-        private set
 
     var onHoverReticleChanged: ((screenX: Float, screenY: Float, radius: Float, tool: ActiveTool, isPrecisionEraser: Boolean, isVisible: Boolean) -> Unit)? = null
 
@@ -301,6 +300,28 @@ class SketchCanvasView @JvmOverloads constructor(
         return monotonicNanos
     }
 
+    // Explicit Unified Touch State Machine
+    var touchState: CanvasTouchState = CanvasTouchState.Idle
+        private set
+
+    val isHoldToEraseActive: Boolean
+        get() = (touchState as? CanvasTouchState.Erasing)?.isHoldToErase == true
+
+    val isHoldingSnappedShape: Boolean
+        get() = touchState is CanvasTouchState.HoldingQuickShape
+
+    val currentSnappedShape: app.goodboy13.bignotes.core.geometry.RecognizedShape?
+        get() = (touchState as? CanvasTouchState.HoldingQuickShape)?.shape
+
+    val isDraggingSelection: Boolean
+        get() = touchState is CanvasTouchState.SelectionDragging
+
+    val isFingerDragging: Boolean
+        get() = touchState is CanvasTouchState.FingerNavigation
+
+    val isErasingSession: Boolean
+        get() = touchState is CanvasTouchState.Erasing
+
     // In-flight stroke points
     private val activeStrokePoints = mutableListOf<StrokePoint>()
     private var liveDabGenerator: app.goodboy13.bignotes.core.geometry.DabGenerator? = null
@@ -309,8 +330,6 @@ class SketchCanvasView @JvmOverloads constructor(
     val activeLassoPoints = mutableListOf<PointF>()
     val selectedStrokes = mutableListOf<Stroke>()
     var selectionBounds: RectF? = null
-        private set
-    var isDraggingSelection = false
         private set
     private var dragStartWorldX = 0f
     private var dragStartWorldY = 0f
@@ -324,24 +343,21 @@ class SketchCanvasView @JvmOverloads constructor(
     private var downScreenX = 0f
     private var downScreenY = 0f
     private var isLongPressConsumed = false
- 
+
     // Shape Snapping ("QuickShape" hold-to-snap)
     private val shapeSnapHandler = Handler(Looper.getMainLooper())
     private var shapeSnapRunnable: Runnable? = null
-    var isHoldingSnappedShape: Boolean = false
-        private set
-    private var currentSnappedShape: app.goodboy13.bignotes.core.geometry.RecognizedShape? = null
     private var shapeHoldAnchorSx: Float = 0f
     private var shapeHoldAnchorSy: Float = 0f
 
     private fun scheduleShapeSnapTimer() {
-        shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
+        cancelShapeSnapTimer()
         val r = Runnable {
-            if (!isHoldingSnappedShape && activeStrokePoints.size >= 6) {
+            if (touchState is CanvasTouchState.Inking && activeStrokePoints.size >= 6) {
                 val recognized = app.goodboy13.bignotes.core.geometry.ShapeRecognizer.recognize(activeStrokePoints)
                 if (recognized != null) {
-                    isHoldingSnappedShape = true
-                    currentSnappedShape = recognized
+                    cancelHoldToEraseTimer()
+                    touchState = CanvasTouchState.HoldingQuickShape(recognized, activeStrokePoints)
                     performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
 
                     val lastPt = activeStrokePoints.lastOrNull()
@@ -364,6 +380,11 @@ class SketchCanvasView @JvmOverloads constructor(
         shapeSnapHandler.postDelayed(r, shapeSnapDelayMs)
     }
 
+    private fun cancelShapeSnapTimer() {
+        shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
+        shapeSnapRunnable = null
+    }
+
     // Hold-to-Erase timer & anchor state
     private val holdToEraseHandler = Handler(Looper.getMainLooper())
     private var holdToEraseRunnable: Runnable? = null
@@ -375,17 +396,15 @@ class SketchCanvasView @JvmOverloads constructor(
         holdToEraseAnchorSx = initSx
         holdToEraseAnchorSy = initSy
         val r = Runnable {
-            if (!isHoldToEraseActive && !isHoldingSnappedShape && activeStrokePoints.size < 8) {
-                isHoldToEraseActive = true
-                shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
-                shapeSnapRunnable = null
+            if (touchState is CanvasTouchState.Inking && activeStrokePoints.size < 8) {
+                cancelShapeSnapTimer()
                 performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                 activeStrokePoints.clear()
                 liveDabGenerator = null
                 frontBufferedRenderer?.renderFrontBufferedLayer(
                     FrontBufferPacket(dabs = emptyList(), clearBeforeDraw = true)
                 )
-                startEraserSession(initSx, initSy, initWx, initWy, EraserMode.PRECISION)
+                startEraserSession(initSx, initSy, initWx, initWy, EraserMode.PRECISION, isHoldToErase = true)
                 onEraserReticleChanged?.invoke(initSx, initSy, eraserRadius, EraserMode.PRECISION, true)
             }
         }
@@ -398,12 +417,6 @@ class SketchCanvasView @JvmOverloads constructor(
         holdToEraseRunnable = null
     }
 
-
-    // Eraser gesture batching
-    private var isErasingSession = false
-    private val sessionOriginalErasedStrokes = mutableMapOf<String, Stroke>()
-    private val sessionLiveSubStrokes = mutableMapOf<String, Stroke>()
-
     // Finger Pan, Zoom, Multi-touch Gestures & Inertia (architected directly from sketcher)
     private var lastTouchX = 0f
     private var lastTouchY = 0f
@@ -414,7 +427,6 @@ class SketchCanvasView @JvmOverloads constructor(
     private var initialPinchZoom = 1.0f
     private var initialPinchAngle = 0f
     private var initialPinchRotation = 0f
-    private var isFingerDragging = false
     private var gestureStartTime = 0L
     private var maxPointersInGesture = 1
     private var gestureMaxFingers = 1
@@ -772,19 +784,24 @@ class SketchCanvasView @JvmOverloads constructor(
                     parent?.requestDisallowInterceptTouchEvent(true)
                     val (wx, wy) = screenToWorld(sx, sy)
                     lastSampledColor = sampleColorAt(wx, wy)
+                    touchState = CanvasTouchState.ColorSampling(sx, sy, lastSampledColor)
                     onColorPickerReticleChanged?.invoke(sx, sy, lastSampledColor, true)
                     samplePixelAt(sx, sy) { sampled ->
+                        touchState = CanvasTouchState.ColorSampling(sx, sy, sampled)
                         onColorPickerReticleChanged?.invoke(sx, sy, sampled, true)
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
                     parent?.requestDisallowInterceptTouchEvent(true)
+                    touchState = CanvasTouchState.ColorSampling(sx, sy, lastSampledColor)
                     onColorPickerReticleChanged?.invoke(sx, sy, lastSampledColor, true)
                     samplePixelAt(sx, sy) { sampled ->
+                        touchState = CanvasTouchState.ColorSampling(sx, sy, sampled)
                         onColorPickerReticleChanged?.invoke(sx, sy, sampled, true)
                     }
                 }
                 MotionEvent.ACTION_UP -> {
+                    touchState = CanvasTouchState.Idle
                     samplePixelAt(sx, sy) { sampled ->
                         onColorPickerReticleChanged?.invoke(sx, sy, sampled, false)
                         onColorPicked?.invoke(sampled)
@@ -792,6 +809,7 @@ class SketchCanvasView @JvmOverloads constructor(
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    touchState = CanvasTouchState.Idle
                     onColorPickerReticleChanged?.invoke(sx, sy, 0L, false)
                 }
             }
@@ -815,7 +833,9 @@ class SketchCanvasView @JvmOverloads constructor(
                                 FrontBufferPacket(clearBeforeDraw = true)
                             )
                             frontBufferedRenderer?.commit()
-                            isFingerDragging = false
+                            if (touchState is CanvasTouchState.FingerNavigation) {
+                                touchState = CanvasTouchState.Idle
+                            }
                             val (wx, wy) = screenToWorld(downScreenX, downScreenY)
                             pasteFromClipboard(wx, wy)
                             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -866,8 +886,8 @@ class SketchCanvasView @JvmOverloads constructor(
             // STYLUS DRAWING / ERASING PIPELINE (WITH HARDWARE PALM REJECTION)
             stopFling()
             renderer.isInteractiveGesture = false
-            if (isFingerDragging) {
-                isFingerDragging = false
+            if (touchState is CanvasTouchState.FingerNavigation) {
+                touchState = CanvasTouchState.Idle
                 requestInteractiveRedraw()
             }
 
@@ -919,7 +939,7 @@ class SketchCanvasView @JvmOverloads constructor(
                         parent?.requestDisallowInterceptTouchEvent(true)
                         if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionIndex == stylusPointerIndex) {
                             if (isInsideSelection) {
-                                isDraggingSelection = true
+                                touchState = CanvasTouchState.SelectionDragging(wx, wy)
                                 dragStartWorldX = wx
                                 dragStartWorldY = wy
                                 totalDragDx = 0f
@@ -933,6 +953,7 @@ class SketchCanvasView @JvmOverloads constructor(
                                 } else {
                                     activeLassoPoints.clear()
                                     activeLassoPoints.add(PointF(wx, wy))
+                                    touchState = CanvasTouchState.LassoTracing(activeLassoPoints)
                                     onLassoPathChanged?.invoke(activeLassoPoints.toList())
                                 }
                             }
@@ -961,7 +982,7 @@ class SketchCanvasView @JvmOverloads constructor(
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                         if (event.actionMasked == MotionEvent.ACTION_UP || event.actionIndex == stylusPointerIndex) {
                             if (isDraggingSelection) {
-                                isDraggingSelection = false
+                                touchState = CanvasTouchState.Idle
                                 if (isDragMoved && kotlin.math.hypot(totalDragDx.toDouble(), totalDragDy.toDouble()) > 2.0) {
                                     translateSelectedStrokes(totalDragDx, totalDragDy)
                                 } else {
@@ -974,6 +995,7 @@ class SketchCanvasView @JvmOverloads constructor(
                             } else if (activeLassoPoints.size >= 3) {
                                 val found = spatialIndex.queryPolygon(activeLassoPoints)
                                 activeLassoPoints.clear()
+                                touchState = CanvasTouchState.Idle
                                 onLassoPathChanged?.invoke(emptyList())
                                 if (found.isNotEmpty()) {
                                     selectedStrokes.clear()
@@ -987,6 +1009,7 @@ class SketchCanvasView @JvmOverloads constructor(
                                 }
                             } else {
                                 activeLassoPoints.clear()
+                                touchState = CanvasTouchState.Idle
                                 onLassoPathChanged?.invoke(emptyList())
                             }
                         }
@@ -994,7 +1017,7 @@ class SketchCanvasView @JvmOverloads constructor(
                     }
                     MotionEvent.ACTION_CANCEL -> {
                         if (isDraggingSelection) {
-                            isDraggingSelection = false
+                            touchState = CanvasTouchState.Idle
                             renderer.updateSelectionDragDelta(0f, 0f)
                             totalDragDx = 0f
                             totalDragDy = 0f
@@ -1002,6 +1025,7 @@ class SketchCanvasView @JvmOverloads constructor(
                             requestRedraw()
                         } else {
                             activeLassoPoints.clear()
+                            touchState = CanvasTouchState.Idle
                             onLassoPathChanged?.invoke(emptyList())
                         }
                         return true
@@ -1056,13 +1080,10 @@ class SketchCanvasView @JvmOverloads constructor(
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                     if (event.actionMasked == MotionEvent.ACTION_UP || event.actionIndex == stylusPointerIndex) {
                         cancelHoldToEraseTimer()
-                        shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
-                        shapeSnapRunnable = null
+                        cancelShapeSnapTimer()
 
                         if (isHoldToEraseActive) {
                             finalizeEraserSession(EraserMode.PRECISION)
-                            isHoldToEraseActive = false
-                            onEraserReticleChanged?.invoke(0f, 0f, 0f, EraserMode.PRECISION, false)
                             return true
                         }
 
@@ -1075,8 +1096,6 @@ class SketchCanvasView @JvmOverloads constructor(
                             val snappedPoints = currentSnappedShape!!.toStrokePoints(commitPressure, time)
                             activeStrokePoints.clear()
                             activeStrokePoints.addAll(snappedPoints)
-                            isHoldingSnappedShape = false
-                            currentSnappedShape = null
                             finalizeCurrentStroke()
                         } else {
                             val lastPoint = activeStrokePoints.lastOrNull()
@@ -1109,14 +1128,9 @@ class SketchCanvasView @JvmOverloads constructor(
 
                 MotionEvent.ACTION_CANCEL -> {
                     cancelHoldToEraseTimer()
-                    shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
-                    shapeSnapRunnable = null
-                    isHoldingSnappedShape = false
-                    currentSnappedShape = null
+                    cancelShapeSnapTimer()
                     if (isHoldToEraseActive) {
                         finalizeEraserSession(EraserMode.PRECISION)
-                        isHoldToEraseActive = false
-                        onEraserReticleChanged?.invoke(0f, 0f, 0f, EraserMode.PRECISION, false)
                     } else if (isErasing) {
                         finalizeEraserSession(effectiveEraserMode)
                     } else {
@@ -1124,6 +1138,7 @@ class SketchCanvasView @JvmOverloads constructor(
                         lastRecordedTimeNanos = 0L
                         activeStrokePoints.clear()
                         liveDabGenerator = null
+                        touchState = CanvasTouchState.Idle
                         frontBufferedRenderer?.renderFrontBufferedLayer(
                             FrontBufferPacket(clearBeforeDraw = true)
                         )
@@ -1152,7 +1167,7 @@ class SketchCanvasView @JvmOverloads constructor(
                     lastTouchY = event.y
                     lastMidX = event.x
                     lastMidY = event.y
-                    isFingerDragging = true
+                    touchState = CanvasTouchState.FingerNavigation(1)
                     gestureStartTime = System.currentTimeMillis()
                     maxPointersInGesture = 1
                     gestureMaxFingers = 1
@@ -1172,14 +1187,15 @@ class SketchCanvasView @JvmOverloads constructor(
                 }
 
                 MotionEvent.ACTION_POINTER_DOWN -> {
-                    if (isDraggingSelection) {
-                        isDraggingSelection = false
+                    if (touchState is CanvasTouchState.SelectionDragging) {
+                        touchState = CanvasTouchState.Idle
                         renderer.updateSelectionDragDelta(0f, 0f)
                         totalDragDx = 0f
                         totalDragDy = 0f
                         onSelectionDragDelta?.invoke(0f, 0f)
                         requestRedraw()
                     }
+                    touchState = CanvasTouchState.FingerNavigation(event.pointerCount)
                     parent?.requestDisallowInterceptTouchEvent(true)
                     stopFling()
                     renderer.isInteractiveGesture = true
@@ -1302,6 +1318,7 @@ class SketchCanvasView @JvmOverloads constructor(
                 }
 
                 MotionEvent.ACTION_POINTER_UP -> {
+                    touchState = CanvasTouchState.FingerNavigation(maxOf(1, event.pointerCount - 1))
                     val liftedIndex = event.actionIndex
                     var r0 = -1
                     var r1 = -1
@@ -1338,8 +1355,8 @@ class SketchCanvasView @JvmOverloads constructor(
                 }
 
                 MotionEvent.ACTION_UP -> {
-                    if (isDraggingSelection) {
-                        isDraggingSelection = false
+                    if (touchState is CanvasTouchState.SelectionDragging) {
+                        touchState = CanvasTouchState.Idle
                         if (isDragMoved && kotlin.math.hypot(totalDragDx.toDouble(), totalDragDy.toDouble()) > 2f) {
                             translateSelectedStrokes(totalDragDx, totalDragDy)
                         } else {
@@ -1358,7 +1375,7 @@ class SketchCanvasView @JvmOverloads constructor(
                     velocityTracker?.recycle()
                     velocityTracker = null
 
-                    isFingerDragging = false
+                    touchState = CanvasTouchState.Idle
                     val duration = System.currentTimeMillis() - gestureStartTime
 
                     // Multi-touch tap: strictly requires stationary two/three finger tap with NO excessive dragging
@@ -1393,8 +1410,8 @@ class SketchCanvasView @JvmOverloads constructor(
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
-                    if (isDraggingSelection) {
-                        isDraggingSelection = false
+                    if (touchState is CanvasTouchState.SelectionDragging) {
+                        touchState = CanvasTouchState.Idle
                         renderer.updateSelectionDragDelta(0f, 0f)
                         totalDragDx = 0f
                         totalDragDy = 0f
@@ -1405,7 +1422,7 @@ class SketchCanvasView @JvmOverloads constructor(
                     stopFling()
                     velocityTracker?.recycle()
                     velocityTracker = null
-                    isFingerDragging = false
+                    touchState = CanvasTouchState.Idle
                     syncCurrentPageStateFromRenderer()
                     requestRedraw()
                     onViewportChanged?.invoke(renderer.zoomScale, renderer.panX, renderer.panY, renderer.rotationDegrees)
@@ -1484,8 +1501,7 @@ class SketchCanvasView @JvmOverloads constructor(
 
         shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
         shapeSnapRunnable = null
-        isHoldingSnappedShape = false
-        currentSnappedShape = null
+        touchState = CanvasTouchState.Inking(activeStrokePoints)
         shapeHoldAnchorSx = sx
         shapeHoldAnchorSy = sy
         if (shapeSnappingEnabled) {
@@ -1521,13 +1537,14 @@ class SketchCanvasView @JvmOverloads constructor(
             return
         }
 
-        if (isHoldingSnappedShape && currentSnappedShape != null) {
+        val holdingShape = (touchState as? CanvasTouchState.HoldingQuickShape)?.shape
+        if (holdingShape != null) {
             val (curWx, curWy) = screenToWorld(curSx, curSy)
             val lastPoint = activeStrokePoints.lastOrNull()
             val p = lastPoint?.pressure ?: effPressure
             val t = event.eventTime
-            val adjusted = currentSnappedShape!!.adjustWithDrag(StrokePoint(curWx, curWy, p, t))
-            currentSnappedShape = adjusted
+            val adjusted = holdingShape.adjustWithDrag(StrokePoint(curWx, curWy, p, t))
+            touchState = CanvasTouchState.HoldingQuickShape(adjusted, activeStrokePoints)
             val densePoints = adjusted.toStrokePoints(p, t)
             val dabs = StrokeTessellator.generateDabs(
                 densePoints,
@@ -1679,26 +1696,33 @@ class SketchCanvasView @JvmOverloads constructor(
 
             activeStrokePoints.clear()
             liveDabGenerator = null
+            touchState = CanvasTouchState.Idle
 
             frontBufferedRenderer?.commit()
+        } else {
+            touchState = CanvasTouchState.Idle
         }
     }
 
-    private fun startEraserSession(sx: Float, sy: Float, wx: Float, wy: Float, mode: EraserMode) {
+    private fun startEraserSession(sx: Float, sy: Float, wx: Float, wy: Float, mode: EraserMode, isHoldToErase: Boolean = false) {
         onPenContactChanged?.invoke(true)
-        isErasingSession = true
-        sessionOriginalErasedStrokes.clear()
-        sessionLiveSubStrokes.clear()
+        val session = EraserSession(mode)
+        touchState = CanvasTouchState.Erasing(session, mode, isHoldToErase)
         onEraserReticleChanged?.invoke(sx, sy, eraserRadius, mode, true)
-        executeEraserAt(wx, wy, mode)
+        executeEraserAt(wx, wy, session)
     }
 
-    private fun performEraserMove(sx: Float, sy: Float, wx: Float, wy: Float, mode: EraserMode) {
-        onEraserReticleChanged?.invoke(sx, sy, eraserRadius, mode, true)
-        executeEraserAt(wx, wy, mode)
+    private fun performEraserMove(sx: Float, sy: Float, wx: Float, wy: Float, mode: EraserMode = eraserMode) {
+        val session = (touchState as? CanvasTouchState.Erasing)?.session ?: run {
+            val s = EraserSession(mode)
+            touchState = CanvasTouchState.Erasing(s, mode, isHoldToErase = false)
+            s
+        }
+        onEraserReticleChanged?.invoke(sx, sy, eraserRadius, session.mode, true)
+        executeEraserAt(wx, wy, session)
     }
 
-    private fun executeEraserAt(wx: Float, wy: Float, mode: EraserMode) {
+    private fun executeEraserAt(wx: Float, wy: Float, session: EraserSession) {
         val effScale = renderer.zoomScale * renderer.pageScale
         val worldRadius = eraserRadius / effScale
         val candidates = spatialIndex.queryCircle(wx, wy, worldRadius)
@@ -1706,14 +1730,10 @@ class SketchCanvasView @JvmOverloads constructor(
 
         var hasModified = false
 
-        if (mode == EraserMode.WHOLE_STROKE) {
+        if (session.mode == EraserMode.WHOLE_STROKE) {
             for (stroke in candidates) {
                 if (EraserEngine.doesStrokeIntersectCircle(stroke, wx, wy, worldRadius)) {
-                    if (stroke.id in sessionLiveSubStrokes) {
-                        sessionLiveSubStrokes.remove(stroke.id)
-                    } else {
-                        sessionOriginalErasedStrokes[stroke.id] = stroke
-                    }
+                    session.recordWholeStrokeErased(stroke)
                     spatialIndex.remove(stroke.id)
                     renderer.removeStrokes(setOf(stroke.id))
                     hasModified = true
@@ -1728,16 +1748,11 @@ class SketchCanvasView @JvmOverloads constructor(
                 val wasCut = subStrokes.isEmpty() || subStrokes.size != 1 || subStrokes[0] !== stroke
 
                 if (wasCut) {
-                    if (stroke.id in sessionLiveSubStrokes) {
-                        sessionLiveSubStrokes.remove(stroke.id)
-                    } else {
-                        sessionOriginalErasedStrokes[stroke.id] = stroke
-                    }
+                    session.recordPrecisionCut(stroke, subStrokes)
                     spatialIndex.remove(stroke.id)
                     renderer.replaceStrokes(setOf(stroke.id), subStrokes)
 
                     for (sub in subStrokes) {
-                        sessionLiveSubStrokes[sub.id] = sub
                         spatialIndex.insert(sub)
                     }
                     hasModified = true
@@ -1750,28 +1765,25 @@ class SketchCanvasView @JvmOverloads constructor(
         }
     }
 
-    private fun finalizeEraserSession(mode: EraserMode) {
+    private fun finalizeEraserSession(mode: EraserMode = eraserMode) {
+        val session = (touchState as? CanvasTouchState.Erasing)?.session
         onPenContactChanged?.invoke(false)
-        isErasingSession = false
-        onEraserReticleChanged?.invoke(0f, 0f, 0f, mode, false)
+        val effMode = session?.mode ?: mode
+        onEraserReticleChanged?.invoke(0f, 0f, 0f, effMode, false)
 
-        if (sessionOriginalErasedStrokes.isNotEmpty()) {
-            val removedList = sessionOriginalErasedStrokes.values.toList()
-            val removedIds = removedList.map { it.id }
-            val addedList = sessionLiveSubStrokes.values.toList()
-            if (addedList.isNotEmpty()) {
-                undoRedoManager.pushAction(
-                    CanvasAction.ReplaceStrokes(removedList, addedList)
-                )
-                onCanvasMutation?.invoke(CanvasMutation.Replaced(removedIds, addedList))
-            } else {
-                undoRedoManager.pushAction(CanvasAction.RemoveStrokes(removedList))
-                onCanvasMutation?.invoke(CanvasMutation.Removed(removedIds))
+        if (session != null) {
+            val action = session.createFinalAction()
+            val mutation = session.createFinalMutation()
+            if (action != null && mutation != null) {
+                undoRedoManager.pushAction(action)
+                onCanvasMutation?.invoke(mutation)
+                onStrokesChanged?.invoke(renderer.getCommittedStrokes())
             }
-            onStrokesChanged?.invoke(renderer.getCommittedStrokes())
         }
-        sessionOriginalErasedStrokes.clear()
-        sessionLiveSubStrokes.clear()
+
+        if (touchState is CanvasTouchState.Erasing) {
+            touchState = CanvasTouchState.Idle
+        }
     }
 
     fun computeBounds(strokes: List<Stroke>): RectF? {
@@ -1794,8 +1806,8 @@ class SketchCanvasView @JvmOverloads constructor(
     }
 
     fun clearSelection() {
-        if (isDraggingSelection) {
-            isDraggingSelection = false
+        if (touchState is CanvasTouchState.SelectionDragging) {
+            touchState = CanvasTouchState.Idle
         }
         renderer.clearSelection()
         selectedStrokes.clear()
