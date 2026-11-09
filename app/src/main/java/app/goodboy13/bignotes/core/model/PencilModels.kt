@@ -23,7 +23,8 @@ enum class ActiveTool {
 
 enum class GridStyle(val displayName: String) {
     DOTS("Dots"),
-    SQUARES("Squares")
+    SQUARES("Squares"),
+    RULED("Ruled")
 }
 
 data class GridConfig(

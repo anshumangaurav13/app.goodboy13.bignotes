@@ -23,7 +23,7 @@ class GridBackgroundRenderer {
     private var uInvMvpLoc = -1
     private var uGridSpacingLoc = -1
     private var uOpacityLoc = -1
-    private var uGridStyleLoc = -1 // 0 = Dots, 1 = Squares
+    private var uGridStyleLoc = -1 // 0 = Dots, 1 = Squares, 2 = Ruled (Horizontal lines)
     private var uDotRadiusLoc = -1
     private var uGridColorLoc = -1
 
@@ -71,12 +71,19 @@ class GridBackgroundRenderer {
                 float radius = max(u_DotRadius, 0.5);
                 // Antialiased circle edge
                 patternAlpha = 1.0 - smoothstep(radius - 0.8, radius + 0.8, distWorld);
-            } else {
+            } else if (u_GridStyle == 1) {
                 // --- SQUARE GRID (LINES) ---
                 // Analytical 1-pixel screen-space line anti-aliasing via fwidth
                 vec2 gridDerivative = fwidth(gridCoord);
                 vec2 lineDist = abs(fract(gridCoord - 0.5) - 0.5) / max(gridDerivative, vec2(1e-5));
                 float line = min(lineDist.x, lineDist.y);
+                patternAlpha = 1.0 - min(line, 1.0);
+            } else {
+                // --- HORIZONTAL RULED LINES ---
+                // Strictly evaluate y-axis distance, suppressing vertical lines entirely
+                vec2 gridDerivative = fwidth(gridCoord);
+                vec2 lineDist = abs(fract(gridCoord - 0.5) - 0.5) / max(gridDerivative, vec2(1e-5));
+                float line = lineDist.y;
                 patternAlpha = 1.0 - min(line, 1.0);
             }
 
@@ -150,7 +157,12 @@ class GridBackgroundRenderer {
         GLES30.glUniformMatrix4fv(uInvMvpLoc, 1, false, invMvpMatrix, 0)
         GLES30.glUniform1f(uGridSpacingLoc, gridConfig.spacingPx)
         GLES30.glUniform1f(uOpacityLoc, gridConfig.opacity)
-        GLES30.glUniform1i(uGridStyleLoc, if (gridConfig.style == GridStyle.DOTS) 0 else 1)
+        val styleInt = when (gridConfig.style) {
+            GridStyle.DOTS -> 0
+            GridStyle.SQUARES -> 1
+            GridStyle.RULED -> 2
+        }
+        GLES30.glUniform1i(uGridStyleLoc, styleInt)
 
         // Keep dots at ~1.5-2.0 screen pixels regardless of zoom
         val screenDotPx = 1.6f
