@@ -7,20 +7,20 @@ import kotlin.math.roundToInt
  * All spatial parameters are relative to the stroke's nominal radius.
  */
 data class InkBleedConfig(
-    val bleedRatio: Float = 0.72f,        // Relative bleed width: 72% of nominal radius
-    val bleedPower: Float = 3.20f,        // Bleed falloff curve power: 3.2
-    val coreShiftRatio: Float = -0.20f,   // Relative core boundary shift: -20% of nominal radius
-    val bleedBaseOpacity: Float = 0.36f,  // Starting opacity at bleed origin: 0.36
-    val aaWidth: Float = 0.55f,           // Screen-space anti-aliasing pixel band multiplier: 0.55px
-    val paperGrainMix: Float = 0.60f,     // Paper tooth texture influence: 0.60
-    val quadMarginRatio: Float = 0.72f,   // Extra tessellation polygon margin: 72% of nominal radius
+    val bleedRatio: Float = 0.98f,        // Relative bleed width: 98% of nominal radius
+    val bleedPower: Float = 1.90f,        // Bleed falloff curve power: 1.90
+    val coreShiftRatio: Float = -0.25f,   // Relative core boundary shift: -25% of nominal radius
+    val bleedBaseOpacity: Float = 0.66f,  // Starting opacity at bleed origin: 0.66
+    val aaWidth: Float = 0.50f,           // Screen-space anti-aliasing pixel band multiplier: 0.50px
+    val paperGrainMix: Float = 0.46f,     // Paper tooth texture influence: 0.46
+    val quadMarginRatio: Float = 0.68f,   // Extra tessellation polygon margin: 68% of nominal radius
 
     // Physical Wet-Ink Optics
-    val inkDilution: Float = 0.20f,       // Single-dab pigment dilution (22% per dab -> 95% solid single line, 99.8% crossover)
-    val fiberFeathering: Float = 0.60f,   // Capillary feathering into cellulose paper fibers
-    val meniscusRim: Float = 0.38f,       // Surface tension / coffee-ring perimeter darkening
-    val wetSheen: Float = 0.80f,          // Liquid wet specular sheen along centerline
-    val chromaHalo: Float = 0.80f         // Chromatographic dye separation halo at fringe
+    val inkDilution: Float = 0.10f,       // Single-dab pigment dilution
+    val fiberFeathering: Float = 0.46f,   // Capillary feathering into cellulose paper fibers
+    val meniscusRim: Float = 0.20f,       // Surface tension / coffee-ring perimeter darkening
+    val wetSheen: Float = 0.48f,          // Liquid wet specular sheen along centerline
+    val chromaHalo: Float = 0.22f         // Chromatographic dye separation halo at fringe
 ) {
     fun toParamString(): String {
         val bleedPct = (bleedRatio * 100f).roundToInt()

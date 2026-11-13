@@ -3,6 +3,7 @@ package app.goodboy13.bignotes.core.gl
 import android.content.Context
 import android.opengl.GLES30
 import app.goodboy13.bignotes.core.geometry.StrokeTessellator
+import app.goodboy13.bignotes.core.model.InkBleedConfig
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.FloatBuffer
@@ -26,17 +27,17 @@ class GraphiteShader(private val context: Context) {
     private var uWetSheenLocation: Int = -1
     private var uChromaHaloLocation: Int = -1
 
-    var bleedRatio: Float = 0.72f
-    var bleedPower: Float = 3.20f
-    var coreShiftRatio: Float = -0.20f
-    var bleedBaseOpacity: Float = 0.36f
-    var aaWidth: Float = 0.55f
-    var paperGrainMix: Float = 0.60f
-    var inkDilution: Float = 0.20f
-    var fiberFeathering: Float = 0.60f
-    var meniscusRim: Float = 0.38f
-    var wetSheen: Float = 0.80f
-    var chromaHalo: Float = 0.80f
+    var bleedRatio: Float = InkBleedConfig.DEFAULT.bleedRatio
+    var bleedPower: Float = InkBleedConfig.DEFAULT.bleedPower
+    var coreShiftRatio: Float = InkBleedConfig.DEFAULT.coreShiftRatio
+    var bleedBaseOpacity: Float = InkBleedConfig.DEFAULT.bleedBaseOpacity
+    var aaWidth: Float = InkBleedConfig.DEFAULT.aaWidth
+    var paperGrainMix: Float = InkBleedConfig.DEFAULT.paperGrainMix
+    var inkDilution: Float = InkBleedConfig.DEFAULT.inkDilution
+    var fiberFeathering: Float = InkBleedConfig.DEFAULT.fiberFeathering
+    var meniscusRim: Float = InkBleedConfig.DEFAULT.meniscusRim
+    var wetSheen: Float = InkBleedConfig.DEFAULT.wetSheen
+    var chromaHalo: Float = InkBleedConfig.DEFAULT.chromaHalo
     var invertColors: Boolean = false
 
     private val locPosition = 0
