@@ -165,6 +165,15 @@ class SketchCanvasView @JvmOverloads constructor(
             }
         }
 
+    var themePreset: app.goodboy13.bignotes.ui.theme.NotebookThemePreset
+        get() = renderer.themePreset
+        set(value) {
+            if (renderer.themePreset != value) {
+                renderer.themePreset = value
+                requestRedraw()
+            }
+        }
+
     var isDarkMode: Boolean
         get() = renderer.isDarkMode
         set(value) {

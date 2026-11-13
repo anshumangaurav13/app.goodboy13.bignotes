@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -76,6 +77,7 @@ fun NotesSidebar(
     onOpenSettings: (() -> Unit)? = null,
     isDarkMode: Boolean = false,
     onToggleDarkMode: () -> Unit = {},
+    onCycleTheme: (() -> Unit)? = null,
     searchHits: Map<String, List<SearchHit>> = emptyMap(),
     onSearchQueryChanged: ((String) -> Unit)? = null,
     onSearchHitSelected: ((SearchHit) -> Unit)? = null,
@@ -535,6 +537,20 @@ fun NotesSidebar(
                                 imageVector = if (dark) Icons.Default.DarkMode else Icons.Default.LightMode,
                                 contentDescription = if (dark) "Switch to Light Mode" else "Switch to Dark Mode",
                                 tint = if (dark) Color(0xFFFFD54F) else Color(0xFFF57C00),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    if (onCycleTheme != null) {
+                        IconButton(
+                            onClick = onCycleTheme,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Palette,
+                                contentDescription = "Cycle Theme",
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }

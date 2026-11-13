@@ -57,6 +57,7 @@ fun DualSidebarContainer(
     onOpenSettings: () -> Unit,
     isDarkMode: Boolean = false,
     onToggleDarkMode: () -> Unit = {},
+    onCycleTheme: (() -> Unit)? = null,
     searchHits: Map<String, List<app.goodboy13.bignotes.core.search.model.SearchHit>> = emptyMap(),
     onSearchQueryChanged: ((String) -> Unit)? = null,
     onSearchHitSelected: ((app.goodboy13.bignotes.core.search.model.SearchHit) -> Unit)? = null,
@@ -101,6 +102,7 @@ fun DualSidebarContainer(
                     onOpenSettings = onOpenSettings,
                     isDarkMode = isDarkMode,
                     onToggleDarkMode = onToggleDarkMode,
+                    onCycleTheme = onCycleTheme,
                     statusBarHeight = statusBarHeight,
                     modifier = Modifier
                         .width(folderWidth)
@@ -131,6 +133,7 @@ fun DualSidebarContainer(
                 onOpenSettings = onOpenSettings,
                 isDarkMode = isDarkMode,
                 onToggleDarkMode = onToggleDarkMode,
+                onCycleTheme = onCycleTheme,
                 searchHits = searchHits,
                 onSearchQueryChanged = onSearchQueryChanged,
                 onSearchHitSelected = onSearchHitSelected,

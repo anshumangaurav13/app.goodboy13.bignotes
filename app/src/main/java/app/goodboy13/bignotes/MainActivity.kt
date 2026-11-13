@@ -107,7 +107,9 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             val prefs = remember { context.getSharedPreferences("bignotes_prefs", android.content.Context.MODE_PRIVATE) }
             val savedIsDark = remember { prefs.getBoolean("is_dark_mode", false) }
-            var themeConfig by remember { mutableStateOf(ThemeConfig(isDark = savedIsDark)) }
+            val savedPresetName = remember { prefs.getString("notebook_theme_preset", app.goodboy13.bignotes.ui.theme.NotebookThemePreset.CLASSIC_SADDLE.id) }
+            val savedPreset = remember(savedPresetName) { app.goodboy13.bignotes.ui.theme.NotebookThemePreset.fromId(savedPresetName) }
+            var themeConfig by remember { mutableStateOf(ThemeConfig(isDark = savedIsDark, preset = savedPreset)) }
 
             val configuration = LocalConfiguration.current
             val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -160,6 +162,7 @@ class MainActivity : ComponentActivity() {
                             themeConfig = newConfig
                             prefs.edit()
                                 .putBoolean("is_dark_mode", newConfig.isDark)
+                                .putString("notebook_theme_preset", newConfig.preset.id)
                                 .apply()
                         },
                         isSidebarVisible = isSidebarVisible,
@@ -828,14 +831,15 @@ fun BigNotesMainScreen(
     // Synchronize paper, dark mode, active tool, and current color reactively
     LaunchedEffect(themeConfig, activeTool, selectedColorIndex, selectedHighlighterColorIndex, canvasView) {
         val view = canvasView ?: return@LaunchedEffect
-        view.paperColor = PaperColor.forTheme(themeConfig.isDark)
+        view.paperColor = PaperColor.forTheme(themeConfig.preset, themeConfig.isDark)
+        view.themePreset = themeConfig.preset
         view.isDarkMode = themeConfig.isDark
 
         val isHl = activeTool == ActiveTool.HIGHLIGHTER
         val activePalette = if (isHl) {
-            InkPalette.getHighlighterColors()
+            InkPalette.getHighlighterColors(themeConfig.preset, themeConfig.isDark)
         } else {
-            InkPalette.getColors()
+            InkPalette.getColors(themeConfig.preset, themeConfig.isDark)
         }
         val chosenIndex = if (isHl) selectedHighlighterColorIndex else selectedColorIndex
         val activeColor = activePalette.getOrElse(chosenIndex) { activePalette[0] }
@@ -932,12 +936,13 @@ fun BigNotesMainScreen(
                     ActiveTool.HIGHLIGHTER -> PencilTone.LIGHT
                     else -> PencilTone.SOFT
                 }
-                boundView.paperColor = PaperColor.forTheme(themeConfig.isDark)
+                boundView.paperColor = PaperColor.forTheme(themeConfig.preset, themeConfig.isDark)
+                boundView.themePreset = themeConfig.preset
                 boundView.isDarkMode = themeConfig.isDark
                 val activePalette = if (activeTool == ActiveTool.HIGHLIGHTER) {
-                    InkPalette.getHighlighterColors()
+                    InkPalette.getHighlighterColors(themeConfig.preset, themeConfig.isDark)
                 } else {
-                    InkPalette.getColors()
+                    InkPalette.getColors(themeConfig.preset, themeConfig.isDark)
                 }
                 val chosenIndex = if (activeTool == ActiveTool.HIGHLIGHTER) selectedHighlighterColorIndex else selectedColorIndex
                 val activeColor = activePalette.getOrElse(chosenIndex) { activePalette[0] }
@@ -1087,6 +1092,14 @@ fun BigNotesMainScreen(
             modifier = Modifier.fillMaxSize()
         )
 
+        // 1b. Tactile Leather Folio Frame (Saddle Stitching, Espresso Cord & Rivets, Oxford Brass Corner Guards)
+        app.goodboy13.bignotes.ui.folio.LeatherFolioFrame(
+            preset = themeConfig.preset,
+            isDark = themeConfig.isDark,
+            sidebarOffsetPx = animatedSidebarWidthPx,
+            statusBarHeightDp = animatedStatusBarDp
+        )
+
         // 2. Floating Note Header (Option A: Minimal top-left pill for sidebar toggle, note title & export)
         FloatingNoteHeader(
             isSidebarVisible = isSidebarVisible,
@@ -1115,19 +1128,11 @@ fun BigNotesMainScreen(
 
         // 3. Collapsible Floating Inking Toolbar with Edge Docking and Radial Color/Size Flyout
         val isHighlighterActive = activeTool == ActiveTool.HIGHLIGHTER
-        val rawPalette = if (isHighlighterActive) {
-            InkPalette.getHighlighterColors()
-        } else {
-            InkPalette.getColors()
-        }
-        val displayPalette = remember(rawPalette, themeConfig.isDark) {
-            if (themeConfig.isDark) {
-                rawPalette.map { item ->
-                    val c = item.color
-                    item.copy(color = Color(1f - c.red, 1f - c.green, 1f - c.blue, c.alpha))
-                }
+        val displayPalette = remember(themeConfig.preset, themeConfig.isDark, isHighlighterActive) {
+            if (isHighlighterActive) {
+                InkPalette.getHighlighterColors(themeConfig.preset, themeConfig.isDark)
             } else {
-                rawPalette
+                InkPalette.getColors(themeConfig.preset, themeConfig.isDark)
             }
         }
         val currentColorIndex = if (isHighlighterActive) selectedHighlighterColorIndex else selectedColorIndex
@@ -1153,19 +1158,19 @@ fun BigNotesMainScreen(
                     view.activeTool = tool
                     if (tool == ActiveTool.HIGHLIGHTER) {
                         view.renderer.currentTone = PencilTone.LIGHT
-                        val hlPalette = InkPalette.getHighlighterColors()
+                        val hlPalette = InkPalette.getHighlighterColors(themeConfig.preset, themeConfig.isDark)
                         val chosen = hlPalette.getOrElse(selectedHighlighterColorIndex) { hlPalette[0] }
                         view.renderer.currentColorRgb = chosen.colorRgb
                         view.renderer.currentPaletteIndex = chosen.slotIndex
                     } else if (tool == ActiveTool.FOUNTAIN_PEN) {
                         view.renderer.currentTone = PencilTone.INK_BLACK
-                        val inkPalette = InkPalette.getColors()
+                        val inkPalette = InkPalette.getColors(themeConfig.preset, themeConfig.isDark)
                         val chosen = inkPalette.getOrElse(selectedColorIndex) { inkPalette[0] }
                         view.renderer.currentColorRgb = chosen.colorRgb
                         view.renderer.currentPaletteIndex = chosen.slotIndex
                     } else if (tool == ActiveTool.PENCIL) {
                         view.renderer.currentTone = PencilTone.SOFT
-                        val inkPalette = InkPalette.getColors()
+                        val inkPalette = InkPalette.getColors(themeConfig.preset, themeConfig.isDark)
                         val chosen = inkPalette.getOrElse(selectedColorIndex) { inkPalette[0] }
                         view.renderer.currentColorRgb = chosen.colorRgb
                         view.renderer.currentPaletteIndex = chosen.slotIndex
@@ -1189,7 +1194,7 @@ fun BigNotesMainScreen(
                 if (activeTool == ActiveTool.HIGHLIGHTER) {
                     selectedHighlighterColorIndex = idx
                     prefs.edit().putInt("selected_highlighter_color_idx", idx).apply()
-                    val hlPalette = InkPalette.getHighlighterColors()
+                    val hlPalette = InkPalette.getHighlighterColors(themeConfig.preset, themeConfig.isDark)
                     val chosen = hlPalette.getOrElse(idx) { hlPalette[0] }
                     canvasView?.let { view ->
                         view.renderer.currentColorRgb = chosen.colorRgb
@@ -1198,7 +1203,7 @@ fun BigNotesMainScreen(
                 } else {
                     selectedColorIndex = idx
                     prefs.edit().putInt("selected_color_idx", idx).apply()
-                    val inkPalette = InkPalette.getColors()
+                    val inkPalette = InkPalette.getColors(themeConfig.preset, themeConfig.isDark)
                     val chosen = inkPalette.getOrElse(idx) { inkPalette[0] }
                     canvasView?.let { view ->
                         view.renderer.currentColorRgb = chosen.colorRgb
@@ -1228,7 +1233,8 @@ fun BigNotesMainScreen(
                     .apply()
             },
             sidebarOffsetPx = animatedSidebarWidthPx,
-            statusBarHeightPx = statusBarTopPx.toFloat()
+            statusBarHeightPx = statusBarTopPx.toFloat(),
+            themePreset = themeConfig.preset
         )
 
         // Dual Sidebar Overlay (smooth animated slide on top of canvas)
@@ -1348,6 +1354,16 @@ fun BigNotesMainScreen(
                 isDarkMode = themeConfig.isDark,
                 onToggleDarkMode = {
                     onThemeConfigChange(themeConfig.copy(isDark = !themeConfig.isDark))
+                },
+                onCycleTheme = {
+                    val nextPreset = when (themeConfig.preset) {
+                        app.goodboy13.bignotes.ui.theme.NotebookThemePreset.CLASSIC_SADDLE -> app.goodboy13.bignotes.ui.theme.NotebookThemePreset.TRAVELERS_ESPRESSO
+                        app.goodboy13.bignotes.ui.theme.NotebookThemePreset.TRAVELERS_ESPRESSO -> app.goodboy13.bignotes.ui.theme.NotebookThemePreset.VINTAGE_OXFORD
+                        app.goodboy13.bignotes.ui.theme.NotebookThemePreset.VINTAGE_OXFORD -> app.goodboy13.bignotes.ui.theme.NotebookThemePreset.STUDIO_CLEAN
+                        app.goodboy13.bignotes.ui.theme.NotebookThemePreset.STUDIO_CLEAN -> app.goodboy13.bignotes.ui.theme.NotebookThemePreset.CLASSIC_SADDLE
+                    }
+                    onThemeConfigChange(themeConfig.copy(preset = nextPreset))
+                    Toast.makeText(context, nextPreset.displayName, Toast.LENGTH_SHORT).show()
                 },
                 searchHits = searchHits,
                 onSearchQueryChanged = onSearchQueryChanged,
@@ -1487,6 +1503,8 @@ fun BigNotesMainScreen(
             },
             modelDownloadStatus = modelDownloadStatus,
             onDownloadModel = { handwritingSearchManager.downloadModel() },
+            themeConfig = themeConfig,
+            onThemeConfigChange = onThemeConfigChange,
             initialCategory = activeSettingsCategory,
             onDismiss = {
                 showSettingsDialog = false

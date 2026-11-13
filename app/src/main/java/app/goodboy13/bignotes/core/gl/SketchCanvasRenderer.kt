@@ -15,6 +15,7 @@ import app.goodboy13.bignotes.core.model.PaperColor
 import app.goodboy13.bignotes.core.model.PencilTone
 import app.goodboy13.bignotes.core.model.Stroke
 import app.goodboy13.bignotes.core.model.StrokePoint
+import app.goodboy13.bignotes.ui.theme.NotebookThemePreset
 import java.lang.ref.SoftReference
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -40,6 +41,7 @@ class SketchCanvasRenderer(
     private var noiseTextureId: Int = 0
     private val pageSeparatorRenderer = PageSeparatorRenderer()
     private val gridRenderer = GridBackgroundRenderer()
+    private val paperTextureRenderer = PaperTextureRenderer()
     private val imageQuadRenderer = ImageQuadRenderer()
     val images = mutableListOf<app.goodboy13.bignotes.core.model.CanvasImage>()
 
@@ -61,6 +63,15 @@ class SketchCanvasRenderer(
 
     @Volatile
     var paperColor: PaperColor = PaperColor.PARCHMENT
+        set(value) {
+            if (field != value) {
+                field = value
+                isFboDirty = true
+            }
+        }
+
+    @Volatile
+    var themePreset: NotebookThemePreset = NotebookThemePreset.CLASSIC_SADDLE
         set(value) {
             if (field != value) {
                 field = value
@@ -406,6 +417,7 @@ class SketchCanvasRenderer(
 
             pageSeparatorRenderer.initGl()
             gridRenderer.initGl()
+            paperTextureRenderer.initGl(context)
             imageQuadRenderer.initGl()
 
             noiseTextureId = NoiseTextureGenerator.createPaperToothTexture()
@@ -476,6 +488,17 @@ class SketchCanvasRenderer(
         // Clear target surface to current PaperColor
         GLES30.glClearColor(paperColor.r, paperColor.g, paperColor.b, paperColor.a)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+
+        // 3.0 Render physical paper texture for active theme
+        if (themePreset != NotebookThemePreset.STUDIO_CLEAN) {
+            if (Matrix.invertM(invDirectScreenMvpMatrix, 0, mvpMatrix, 0)) {
+                paperTextureRenderer.draw(
+                    invDirectScreenMvpMatrix,
+                    paperColor,
+                    themePreset
+                )
+            }
+        }
 
         val shader = graphiteShader ?: return
 
@@ -833,6 +856,17 @@ class SketchCanvasRenderer(
             visMaxY = Float.POSITIVE_INFINITY
         }
 
+        // Render physical paper texture into FBO
+        if (themePreset != NotebookThemePreset.STUDIO_CLEAN) {
+            if (Matrix.invertM(invFboMvpMatrix, 0, fboMvpMatrix, 0)) {
+                paperTextureRenderer.draw(
+                    invFboMvpMatrix,
+                    paperColor,
+                    themePreset
+                )
+            }
+        }
+
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
 
@@ -1061,6 +1095,7 @@ class SketchCanvasRenderer(
         committedFbo?.cleanup()
         committedFbo = null
         pageSeparatorRenderer.cleanup()
+        paperTextureRenderer.destroyGl()
         if (noiseTextureId != 0) {
             GLES30.glDeleteTextures(1, intArrayOf(noiseTextureId), 0)
             noiseTextureId = 0

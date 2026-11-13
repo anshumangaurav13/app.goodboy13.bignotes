@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,6 +48,7 @@ fun FoldersSidebar(
     onOpenSettings: () -> Unit,
     isDarkMode: Boolean = false,
     onToggleDarkMode: () -> Unit = {},
+    onCycleTheme: (() -> Unit)? = null,
     onToggleCollapse: (() -> Unit)? = null,
     statusBarHeight: Dp = 0.dp,
     modifier: Modifier = Modifier
@@ -206,6 +208,20 @@ fun FoldersSidebar(
                             imageVector = if (dark) Icons.Default.DarkMode else Icons.Default.LightMode,
                             contentDescription = if (dark) "Switch to Light Mode" else "Switch to Dark Mode",
                             tint = if (dark) Color(0xFFFFD54F) else Color(0xFFF57C00),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                if (onCycleTheme != null) {
+                    IconButton(
+                        onClick = onCycleTheme,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Palette,
+                            contentDescription = "Cycle Theme",
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
