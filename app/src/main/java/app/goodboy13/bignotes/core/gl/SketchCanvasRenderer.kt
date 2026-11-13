@@ -98,6 +98,8 @@ class SketchCanvasRenderer(
     var basePageWidth: Float = 1200f
     @Volatile
     var currentViewWidth: Float = 0f
+    @Volatile
+    var currentViewHeight: Float = 0f
 
     val pageScale: Float
         get() {
@@ -466,9 +468,8 @@ class SketchCanvasRenderer(
     // --- GLFrontBufferedRenderer.Callback Implementation ---
 
     private fun renderSceneBackground(
-        width: Float,
-        bufferWidth: Int,
-        bufferHeight: Int,
+        viewWidth: Float,
+        viewHeight: Float,
         mvpMatrix: FloatArray,
         worldToViewMatrix: FloatArray
     ) {
@@ -485,8 +486,8 @@ class SketchCanvasRenderer(
         var visMaxY = Float.NEGATIVE_INFINITY
 
         if (Matrix.invertM(invWorldToViewMatrix, 0, worldToViewMatrix, 0)) {
-            val w = width
-            val h = bufferHeight.toFloat()
+            val w = viewWidth
+            val h = viewHeight
             corners[0] = 0f; corners[1] = 0f
             corners[2] = w; corners[3] = 0f
             corners[4] = w; corners[5] = h
@@ -600,6 +601,7 @@ class SketchCanvasRenderer(
         param: FrontBufferPacket
     ) {
         currentViewWidth = width.toFloat()
+        currentViewHeight = height.toFloat()
         ensureGlInitialized(width, height)
 
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, bufferInfo.frameBufferId)
@@ -631,8 +633,7 @@ class SketchCanvasRenderer(
             // Prime the front buffer with paper, grid, images, and committed strokes
             renderSceneBackground(
                 width.toFloat(),
-                bufferInfo.width,
-                bufferInfo.height,
+                height.toFloat(),
                 frontBufferMvpMatrix,
                 currentWorldToViewMatrix
             )
@@ -691,6 +692,7 @@ class SketchCanvasRenderer(
         params: Collection<FrontBufferPacket>
     ) {
         currentViewWidth = width.toFloat()
+        currentViewHeight = height.toFloat()
         ensureGlInitialized(width, height)
 
         val shader = graphiteShader ?: return
@@ -713,8 +715,7 @@ class SketchCanvasRenderer(
 
         renderSceneBackground(
             width.toFloat(),
-            bufferInfo.width,
-            bufferInfo.height,
+            height.toFloat(),
             directScreenMvpMatrix,
             currentWorldToViewMatrix
         )

@@ -425,11 +425,13 @@
   </div>
 
   <div class="presets-bar">
-    <div class="preset-chip active" data-preset="ULTRA_WET">★ Ultra-Wet</div>
+    <div class="preset-chip active" data-preset="BIGNOTES_CURRENT">★ BigNotes (Current)</div>
+    <div class="preset-chip" data-preset="SUBTLE_SOFT">Subtle (-15%)</div>
+    <div class="preset-chip" data-preset="VELVET_SMOOTH">Velvet (-35%)</div>
+    <div class="preset-chip" data-preset="CLEAN_FLOW">Clean Flow (-50%)</div>
+    <div class="preset-chip" data-preset="POLISHED_BOND">Polished (-70%)</div>
+    <div class="preset-chip" data-preset="ULTRA_WET">Ultra-Wet</div>
     <div class="preset-chip" data-preset="NATURAL_PEN">Natural</div>
-    <div class="preset-chip" data-preset="VELVET">Velvet</div>
-    <div class="preset-chip" data-preset="HEAVY">Heavy</div>
-    <div class="preset-chip" data-preset="DEFAULT">Default</div>
   </div>
 
   <div class="tab-bar">
@@ -463,31 +465,31 @@
       </div>
 
       <div class="control-group">
-        <div class="label-row"><span class="label-name">Fiber Feathering (Micro-Bleed)</span><span class="label-val" id="val-fiberFeathering">0.24</span></div>
-        <input type="range" id="param-fiberFeathering" min="0.0" max="0.60" step="0.02" value="0.24">
+        <div class="label-row"><span class="label-name">Fiber Feathering (Micro-Bleed)</span><span class="label-val" id="val-fiberFeathering">0.60</span></div>
+        <input type="range" id="param-fiberFeathering" min="0.0" max="0.80" step="0.02" value="0.60">
       </div>
 
       <div class="control-group">
-        <div class="label-row"><span class="label-name">Liquid Wet Sheen</span><span class="label-val" id="val-wetSheen">0.30</span></div>
-        <input type="range" id="param-wetSheen" min="0.0" max="0.80" step="0.02" value="0.30">
+        <div class="label-row"><span class="label-name">Liquid Wet Sheen</span><span class="label-val" id="val-wetSheen">0.80</span></div>
+        <input type="range" id="param-wetSheen" min="0.0" max="1.00" step="0.02" value="0.80">
       </div>
 
       <div class="control-group">
-        <div class="label-row"><span class="label-name">Chromatography Halo (Undertone)</span><span class="label-val" id="val-chromaHalo">0.22</span></div>
-        <input type="range" id="param-chromaHalo" min="0.0" max="0.80" step="0.02" value="0.22">
+        <div class="label-row"><span class="label-name">Chromatography Halo (Undertone)</span><span class="label-val" id="val-chromaHalo">0.80</span></div>
+        <input type="range" id="param-chromaHalo" min="0.0" max="1.00" step="0.02" value="0.80">
       </div>
 
       <div class="control-group">
-        <div class="label-row"><span class="label-name">Single-Dab Dilution</span><span class="label-val" id="val-inkDilution">0.10</span></div>
-        <input type="range" id="param-inkDilution" min="0.02" max="0.35" step="0.01" value="0.10">
+        <div class="label-row"><span class="label-name">Single-Dab Dilution</span><span class="label-val" id="val-inkDilution">0.20</span></div>
+        <input type="range" id="param-inkDilution" min="0.02" max="0.50" step="0.01" value="0.20">
       </div>
     </div>
 
     <!-- TAB 2: BLEED & GRAIN -->
     <div class="tab-content" id="tab-bleed" style="display: none;">
       <div class="control-group">
-        <div class="label-row"><span class="label-name">Bleed Width Ratio</span><span class="label-val" id="val-bleedRatio">0.85</span></div>
-        <input type="range" id="param-bleedRatio" min="0.0" max="2.0" step="0.02" value="0.85">
+        <div class="label-row"><span class="label-name">Bleed Width Ratio</span><span class="label-val" id="val-bleedRatio">0.72</span></div>
+        <input type="range" id="param-bleedRatio" min="0.0" max="2.0" step="0.02" value="0.72">
       </div>
       <div class="control-group">
         <div class="label-row"><span class="label-name">Bleed Falloff Power</span><span class="label-val" id="val-bleedPower">3.2</span></div>
@@ -498,12 +500,12 @@
         <input type="range" id="param-coreShiftRatio" min="-0.6" max="0.6" step="0.02" value="-0.20">
       </div>
       <div class="control-group">
-        <div class="label-row"><span class="label-name">Bleed Base Opacity</span><span class="label-val" id="val-bleedBaseOpacity">0.42</span></div>
-        <input type="range" id="param-bleedBaseOpacity" min="0.0" max="1.0" step="0.02" value="0.42">
+        <div class="label-row"><span class="label-name">Bleed Base Opacity</span><span class="label-val" id="val-bleedBaseOpacity">0.36</span></div>
+        <input type="range" id="param-bleedBaseOpacity" min="0.0" max="1.0" step="0.02" value="0.36">
       </div>
       <div class="control-group">
-        <div class="label-row"><span class="label-name">Paper Tooth Texture Mix</span><span class="label-val" id="val-paperGrainMix">0.50</span></div>
-        <input type="range" id="param-paperGrainMix" min="0.0" max="1.0" step="0.02" value="0.50">
+        <div class="label-row"><span class="label-name">Paper Tooth Texture Mix</span><span class="label-val" id="val-paperGrainMix">0.60</span></div>
+        <input type="range" id="param-paperGrainMix" min="0.0" max="1.0" step="0.02" value="0.60">
       </div>
       <div class="control-group">
         <div class="label-row"><span class="label-name">Subpixel AA Band</span><span class="label-val" id="val-aaWidth">0.55px</span></div>
@@ -546,7 +548,7 @@
 
       <div class="checkbox-row" style="background: var(--card-bg); padding: 6px 8px; border-radius: 8px;">
         <span>Stylus Only (Ignore Finger)</span>
-        <input type="checkbox" id="chk-stylus-only" checked>
+        <input type="checkbox" id="chk-stylus-only">
       </div>
     </div>
   </div>
@@ -574,29 +576,114 @@
 // ==========================================
 const CONFIG = {
   baseWidth: 5.5,
-  inkDilution: 0.10,
-  bleedRatio: 0.85,
+  inkDilution: 0.20,
+  bleedRatio: 0.72,
   bleedPower: 3.2,
   coreShiftRatio: -0.20,
-  bleedBaseOpacity: 0.42,
-  paperGrainMix: 0.50,
+  bleedBaseOpacity: 0.36,
+  paperGrainMix: 0.60,
   aaWidth: 0.55,
   quadMarginRatio: 0.72,
 
   // Physical Wet-Ink Optics & Subtractive Multiply
   multiplyStrength: 0.85,
   selfOverlapDarkening: 1.10,
-  fiberFeathering: 0.24,
+  fiberFeathering: 0.60,
   meniscusRim: 0.38,
-  wetSheen: 0.30,
-  chromaHalo: 0.22,
+  wetSheen: 0.80,
+  chromaHalo: 0.80,
 
   color: [15 / 255, 23 / 255, 42 / 255, 1.0], // Carbon Black #0F172A
   paperColor: "#f4ede2",
-  stylusOnly: true
+  stylusOnly: false
 };
 
 const PRESETS = {
+  BIGNOTES_CURRENT: {
+    baseWidth: 5.5,
+    inkDilution: 0.20,
+    bleedRatio: 0.72,
+    bleedPower: 3.2,
+    coreShiftRatio: -0.20,
+    bleedBaseOpacity: 0.36,
+    paperGrainMix: 0.60,
+    aaWidth: 0.55,
+    quadMarginRatio: 0.72,
+    multiplyStrength: 0.85,
+    selfOverlapDarkening: 1.10,
+    fiberFeathering: 0.60,
+    meniscusRim: 0.38,
+    wetSheen: 0.80,
+    chromaHalo: 0.80
+  },
+  SUBTLE_SOFT: {
+    baseWidth: 5.5,
+    inkDilution: 0.20,
+    bleedRatio: 0.72,
+    bleedPower: 3.2,
+    coreShiftRatio: -0.20,
+    bleedBaseOpacity: 0.36,
+    paperGrainMix: 0.50,
+    aaWidth: 0.55,
+    quadMarginRatio: 0.72,
+    multiplyStrength: 0.85,
+    selfOverlapDarkening: 1.10,
+    fiberFeathering: 0.50,
+    meniscusRim: 0.38,
+    wetSheen: 0.80,
+    chromaHalo: 0.80
+  },
+  VELVET_SMOOTH: {
+    baseWidth: 5.5,
+    inkDilution: 0.20,
+    bleedRatio: 0.72,
+    bleedPower: 3.2,
+    coreShiftRatio: -0.20,
+    bleedBaseOpacity: 0.36,
+    paperGrainMix: 0.40,
+    aaWidth: 0.55,
+    quadMarginRatio: 0.72,
+    multiplyStrength: 0.85,
+    selfOverlapDarkening: 1.10,
+    fiberFeathering: 0.40,
+    meniscusRim: 0.38,
+    wetSheen: 0.80,
+    chromaHalo: 0.80
+  },
+  CLEAN_FLOW: {
+    baseWidth: 5.5,
+    inkDilution: 0.20,
+    bleedRatio: 0.72,
+    bleedPower: 3.2,
+    coreShiftRatio: -0.20,
+    bleedBaseOpacity: 0.36,
+    paperGrainMix: 0.28,
+    aaWidth: 0.55,
+    quadMarginRatio: 0.72,
+    multiplyStrength: 0.85,
+    selfOverlapDarkening: 1.10,
+    fiberFeathering: 0.28,
+    meniscusRim: 0.38,
+    wetSheen: 0.80,
+    chromaHalo: 0.80
+  },
+  POLISHED_BOND: {
+    baseWidth: 5.5,
+    inkDilution: 0.20,
+    bleedRatio: 0.72,
+    bleedPower: 3.2,
+    coreShiftRatio: -0.20,
+    bleedBaseOpacity: 0.36,
+    paperGrainMix: 0.18,
+    aaWidth: 0.55,
+    quadMarginRatio: 0.72,
+    multiplyStrength: 0.85,
+    selfOverlapDarkening: 1.10,
+    fiberFeathering: 0.18,
+    meniscusRim: 0.38,
+    wetSheen: 0.80,
+    chromaHalo: 0.80
+  },
   ULTRA_WET: {
     baseWidth: 5.5,
     inkDilution: 0.10,
@@ -630,57 +717,6 @@ const PRESETS = {
     meniscusRim: 0.20,
     wetSheen: 0.15,
     chromaHalo: 0.10
-  },
-  VELVET: {
-    baseWidth: 6.0,
-    inkDilution: 0.12,
-    bleedRatio: 0.45,
-    bleedPower: 1.8,
-    coreShiftRatio: 0.05,
-    bleedBaseOpacity: 0.95,
-    paperGrainMix: 0.20,
-    aaWidth: 1.5,
-    quadMarginRatio: 0.80,
-    multiplyStrength: 0.75,
-    selfOverlapDarkening: 1.00,
-    fiberFeathering: 0.15,
-    meniscusRim: 0.28,
-    wetSheen: 0.22,
-    chromaHalo: 0.15
-  },
-  HEAVY: {
-    baseWidth: 7.0,
-    inkDilution: 0.14,
-    bleedRatio: 0.75,
-    bleedPower: 1.4,
-    coreShiftRatio: 0.10,
-    bleedBaseOpacity: 0.85,
-    paperGrainMix: 0.35,
-    aaWidth: 1.5,
-    quadMarginRatio: 1.00,
-    multiplyStrength: 0.95,
-    selfOverlapDarkening: 1.30,
-    fiberFeathering: 0.28,
-    meniscusRim: 0.45,
-    wetSheen: 0.35,
-    chromaHalo: 0.28
-  },
-  DEFAULT: {
-    baseWidth: 5.0,
-    inkDilution: 0.10,
-    bleedRatio: 0.98,
-    bleedPower: 3.9,
-    coreShiftRatio: -0.25,
-    bleedBaseOpacity: 0.37,
-    paperGrainMix: 0.46,
-    aaWidth: 0.50,
-    quadMarginRatio: 0.68,
-    multiplyStrength: 0.0,
-    selfOverlapDarkening: 0.0,
-    fiberFeathering: 0.0,
-    meniscusRim: 0.0,
-    wetSheen: 0.0,
-    chromaHalo: 0.0
   }
 };
 
@@ -1682,7 +1718,7 @@ val inkBleedConfig = InkBleedConfig(
 // Initialization
 initPrograms();
 resizeFbos();
-applyPreset("ULTRA_WET");
+applyPreset("BIGNOTES_CURRENT");
 </script>
 </body>
 </html>

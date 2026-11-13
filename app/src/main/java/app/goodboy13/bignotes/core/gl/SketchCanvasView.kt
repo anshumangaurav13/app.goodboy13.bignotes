@@ -117,11 +117,16 @@ class SketchCanvasView @JvmOverloads constructor(
         set(value) {
             if (field != value) {
                 field = value
+                if (value == ActiveTool.WHOLE_STROKE_ERASER) {
+                    eraserMode = EraserMode.WHOLE_STROKE
+                } else if (value == ActiveTool.PRECISION_ERASER) {
+                    eraserMode = EraserMode.PRECISION
+                }
                 if (value != ActiveTool.LASSO) {
                     clearSelection()
                 }
                 if (value != ActiveTool.PRECISION_ERASER && value != ActiveTool.WHOLE_STROKE_ERASER) {
-                    onEraserReticleChanged?.invoke(0f, 0f, 0f, EraserMode.PRECISION, false)
+                    onEraserReticleChanged?.invoke(0f, 0f, 0f, eraserMode, false)
                     onHoverReticleChanged?.invoke(0f, 0f, 0f, value, false, false)
                 }
             }
@@ -404,8 +409,9 @@ class SketchCanvasView @JvmOverloads constructor(
                 frontBufferedRenderer?.renderFrontBufferedLayer(
                     FrontBufferPacket(dabs = emptyList(), clearBeforeDraw = true)
                 )
-                startEraserSession(initSx, initSy, initWx, initWy, EraserMode.PRECISION, isHoldToErase = true)
-                onEraserReticleChanged?.invoke(initSx, initSy, eraserRadius, EraserMode.PRECISION, true)
+                val activeMode = if (activeTool == ActiveTool.WHOLE_STROKE_ERASER) EraserMode.WHOLE_STROKE else eraserMode
+                startEraserSession(initSx, initSy, initWx, initWy, activeMode, isHoldToErase = true)
+                onEraserReticleChanged?.invoke(initSx, initSy, eraserRadius, activeMode, true)
             }
         }
         holdToEraseRunnable = r
@@ -573,7 +579,7 @@ class SketchCanvasView @JvmOverloads constructor(
 
     fun getVerticalScrollInfo(): VerticalScrollInfo {
         val effScale = (renderer.zoomScale * renderer.pageScale).coerceAtLeast(0.001f)
-        val viewH = if (height > 0) height.toFloat() else (if (renderer.currentViewWidth > 0f) renderer.currentViewWidth * 1.5f else 1800f)
+        val viewH = if (height > 0) height.toFloat() else (if (renderer.currentViewHeight > 0f) renderer.currentViewHeight else (if (renderer.currentViewWidth > 0f) renderer.currentViewWidth * 1.5f else 1800f))
         val visibleWorldH = (viewH - renderer.viewOffsetY).coerceAtLeast(100f) / effScale
 
         val maxStrokeY = renderer.getMaxStrokeY()
@@ -626,7 +632,7 @@ class SketchCanvasView @JvmOverloads constructor(
      */
     fun scrollToWorldY(targetWorldY: Float) {
         val effScale = (renderer.zoomScale * renderer.pageScale).coerceAtLeast(0.001f)
-        val viewH = if (height > 0) height.toFloat() else (if (renderer.currentViewWidth > 0f) renderer.currentViewWidth * 1.5f else 1800f)
+        val viewH = if (height > 0) height.toFloat() else (if (renderer.currentViewHeight > 0f) renderer.currentViewHeight else (if (renderer.currentViewWidth > 0f) renderer.currentViewWidth * 1.5f else 1800f))
         val targetScreenOffset = viewH * 0.25f
         renderer.panY = (-targetWorldY * effScale + targetScreenOffset).coerceAtMost(0f)
         syncCurrentPageStateFromRenderer()
@@ -656,6 +662,9 @@ class SketchCanvasView @JvmOverloads constructor(
                         val minPanX = if (renderer.zoomScale > 1.001f) -visibleWidth * (renderer.zoomScale - 1.0f) else 0f
                         renderer.panX = renderer.panX.coerceIn(minPanX, 0f)
                     }
+                    if (h > 0) {
+                        renderer.currentViewHeight = h.toFloat()
+                    }
                     if (pendingFocusOnLastStroke && h > 0) {
                         pendingFocusOnLastStroke = false
                         scrollToLastStroke()
@@ -673,6 +682,7 @@ class SketchCanvasView @JvmOverloads constructor(
         super.onSizeChanged(w, h, oldw, oldh)
         if (w > 0 && h > 0) {
             renderer.currentViewWidth = w.toFloat()
+            renderer.currentViewHeight = h.toFloat()
             val visibleWidth = (w.toFloat() - renderer.viewOffsetX).coerceAtLeast(100f)
             val minPanX = if (renderer.zoomScale > 1.001f) -visibleWidth * (renderer.zoomScale - 1.0f) else 0f
             renderer.panX = renderer.panX.coerceIn(minPanX, 0f)
@@ -906,7 +916,7 @@ class SketchCanvasView @JvmOverloads constructor(
                     activeTool == ActiveTool.WHOLE_STROKE_ERASER
 
             val effectiveEraserMode = when {
-                isHoldToEraseActive -> EraserMode.PRECISION
+                isHoldToEraseActive -> (touchState as? CanvasTouchState.Erasing)?.mode ?: (if (activeTool == ActiveTool.WHOLE_STROKE_ERASER) EraserMode.WHOLE_STROKE else eraserMode)
                 activeTool == ActiveTool.WHOLE_STROKE_ERASER -> EraserMode.WHOLE_STROKE
                 else -> eraserMode
             }
@@ -1060,7 +1070,7 @@ class SketchCanvasView @JvmOverloads constructor(
 
                 MotionEvent.ACTION_MOVE -> {
                     if (isHoldToEraseActive) {
-                        performEraserMove(sx, sy, wx, wy, EraserMode.PRECISION)
+                        performEraserMove(sx, sy, wx, wy, effectiveEraserMode)
                         return true
                     }
                     if (holdToEraseRunnable != null) {
@@ -1083,7 +1093,7 @@ class SketchCanvasView @JvmOverloads constructor(
                         cancelShapeSnapTimer()
 
                         if (isHoldToEraseActive) {
-                            finalizeEraserSession(EraserMode.PRECISION)
+                            finalizeEraserSession(effectiveEraserMode)
                             return true
                         }
 
@@ -1130,7 +1140,7 @@ class SketchCanvasView @JvmOverloads constructor(
                     cancelHoldToEraseTimer()
                     cancelShapeSnapTimer()
                     if (isHoldToEraseActive) {
-                        finalizeEraserSession(EraserMode.PRECISION)
+                        finalizeEraserSession(effectiveEraserMode)
                     } else if (isErasing) {
                         finalizeEraserSession(effectiveEraserMode)
                     } else {
@@ -2266,9 +2276,23 @@ class SketchCanvasView @JvmOverloads constructor(
     }
 
     fun resetZoom() {
-        renderer.zoomScale = 1.0f
+        val w = if (width > 0) width.toFloat() else (if (renderer.currentViewWidth > 0f) renderer.currentViewWidth else 1200f)
+        val h = if (height > 0) height.toFloat() else (if (renderer.currentViewHeight > 0f) renderer.currentViewHeight else 1800f)
+        val focalX = w * 0.5f
+        val focalY = h * 0.5f
+        val targetZoom = 1.0f
+        val factor = if (renderer.zoomScale > 0.001f) targetZoom / renderer.zoomScale else 1.0f
+
+        val vx = focalX - renderer.viewOffsetX - renderer.panX
+        val vy = focalY - renderer.viewOffsetY - renderer.panY
+
+        val rx = factor * vx
+        val ry = factor * vy
+
         renderer.panX = 0f
-        renderer.panY = 0f
+        renderer.panY = (focalY - renderer.viewOffsetY - ry).coerceAtMost(0f)
+        renderer.zoomScale = targetZoom
+        renderer.rotationDegrees = 0f
         syncCurrentPageStateFromRenderer()
         requestRedraw()
         onViewportChanged?.invoke(renderer.zoomScale, renderer.panX, renderer.panY, renderer.rotationDegrees)
