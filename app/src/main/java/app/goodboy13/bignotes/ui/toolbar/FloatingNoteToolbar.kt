@@ -75,7 +75,6 @@ fun FloatingNoteToolbar(
     onDockStateChanged: (edge: DockEdge, posFraction: Float, isCollapsed: Boolean) -> Unit = { _, _, _ -> },
     sidebarOffsetPx: Float = 0f,
     statusBarHeightPx: Float = 0f,
-    themePreset: app.goodboy13.bignotes.ui.theme.NotebookThemePreset = app.goodboy13.bignotes.ui.theme.NotebookThemePreset.CLASSIC_SADDLE,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -179,22 +178,11 @@ fun FloatingNoteToolbar(
             )
         }
 
-        val toolbarBorder = when (themePreset) {
-            app.goodboy13.bignotes.ui.theme.NotebookThemePreset.CLASSIC_SADDLE ->
-                BorderStroke(1.5.dp, Color(0xFFC59D5F).copy(alpha = 0.75f))
-            app.goodboy13.bignotes.ui.theme.NotebookThemePreset.TRAVELERS_ESPRESSO ->
-                BorderStroke(1.5.dp, Color(0xFF8B6F4E).copy(alpha = 0.70f))
-            app.goodboy13.bignotes.ui.theme.NotebookThemePreset.VINTAGE_OXFORD ->
-                BorderStroke(1.5.dp, Color(0xFFD4AF37).copy(alpha = 0.80f))
-            app.goodboy13.bignotes.ui.theme.NotebookThemePreset.STUDIO_CLEAN ->
-                BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f))
-        }
-
         // Floating Toolbar Pill
         Surface(
             shape = RoundedCornerShape(22.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-            border = toolbarBorder,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)),
             shadowElevation = 8.dp,
             tonalElevation = 3.dp,
             modifier = Modifier

@@ -48,7 +48,6 @@ import app.goodboy13.bignotes.core.model.PressureCurveDefaults
 import app.goodboy13.bignotes.core.model.VelocityCurveDefaults
 import app.goodboy13.bignotes.ui.components.BezierCurveGraph
 import app.goodboy13.bignotes.ui.theme.InkPalette
-import app.goodboy13.bignotes.ui.theme.NotebookThemePreset
 import app.goodboy13.bignotes.ui.theme.ThemeConfig
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -61,12 +60,6 @@ enum class SettingsCategory(
     val icon: ImageVector,
     val iconBg: Color
 ) {
-    THEME_APPEARANCE(
-        "Themes & Folio",
-        "Leather journal styles, paper tones & ink palettes",
-        Icons.Default.Palette,
-        Color(0xFFB45309)
-    ),
     PEN_STYLUS(
         "Pen & Stylus",
         "Palm rejection, prediction, curves & snapping",
@@ -147,8 +140,6 @@ fun SettingsDialog(
     onAutoBackupEnabledChange: (Boolean) -> Unit = {},
     modelDownloadStatus: app.goodboy13.bignotes.core.search.model.ModelDownloadStatus = app.goodboy13.bignotes.core.search.model.ModelDownloadStatus.Ready,
     onDownloadModel: (() -> Unit)? = null,
-    themeConfig: ThemeConfig = ThemeConfig(),
-    onThemeConfigChange: (ThemeConfig) -> Unit = {},
     initialCategory: SettingsCategory? = null,
     onDismiss: () -> Unit
 ) {
@@ -345,11 +336,6 @@ fun SettingsDialog(
                                 .verticalScroll(rememberScrollState())
                         ) {
                             when (targetCat) {
-                                SettingsCategory.THEME_APPEARANCE -> ThemeAppearanceDetail(
-                                    themeConfig = themeConfig,
-                                    onThemeConfigChange = onThemeConfigChange
-                                )
-
                                 SettingsCategory.PEN_STYLUS -> PenStylusDetail(
                                     strictStylusMode = strictStylusMode,
                                     onStrictStylusModeChange = onStrictStylusModeChange,
@@ -452,128 +438,6 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             content = content
         )
-    }
-}
-
-@Composable
-private fun ThemeAppearanceDetail(
-    themeConfig: ThemeConfig,
-    onThemeConfigChange: (ThemeConfig) -> Unit
-) {
-    SectionHeader("NOTEBOOK THEME & LEATHER FOLIO")
-    Spacer(modifier = Modifier.height(4.dp))
-
-    NotebookThemePreset.entries.forEach { preset ->
-        val isSelected = themeConfig.preset == preset
-        val inkColors = InkPalette.getColors(preset, themeConfig.isDark)
-        val paperColor = PaperColor.forTheme(preset, themeConfig.isDark)
-
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-            border = BorderStroke(
-                if (isSelected) 1.5.dp else 0.5.dp,
-                if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-                .clickable {
-                    onThemeConfigChange(themeConfig.copy(preset = preset))
-                }
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = preset.displayName,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.5.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    RadioButton(
-                        selected = isSelected,
-                        onClick = { onThemeConfigChange(themeConfig.copy(preset = preset)) },
-                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Visual Swatch Bar: Paper backing + 6 Inking Dots
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(paperColor.colorHex))
-                        .border(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Paper & Inks",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium, fontSize = 11.sp),
-                        color = if (paperColor.isDark) Color(0xFFE0E0E0) else Color(0xFF424242)
-                    )
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        inkColors.forEach { item ->
-                            Box(
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .clip(CircleShape)
-                                    .background(item.color)
-                                    .border(1.dp, if (paperColor.isDark) Color(0x44FFFFFF) else Color(0x33000000), CircleShape)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Spacer(modifier = Modifier.height(14.dp))
-
-    SectionHeader("APPEARANCE MODE")
-    SettingsCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                Text(
-                    text = "Dark Mode / Night Journal",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-                )
-                Text(
-                    text = "Deep toned leather binding, dark parchment canvas & adapted night pigments",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-            }
-            Switch(
-                checked = themeConfig.isDark,
-                onCheckedChange = { checked ->
-                    onThemeConfigChange(themeConfig.copy(isDark = checked))
-                }
-            )
-        }
     }
 }
 

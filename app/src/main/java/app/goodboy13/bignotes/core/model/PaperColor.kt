@@ -1,7 +1,5 @@
 package app.goodboy13.bignotes.core.model
 
-import app.goodboy13.bignotes.ui.theme.NotebookThemePreset
-
 enum class PaperColor(
     val id: String,
     val displayName: String,
@@ -47,60 +45,6 @@ enum class PaperColor(
         g = 0.13725f,
         b = 0.14902f,
         isDark = true
-    ),
-    IVORY_VELLUM(
-        id = "ivory_vellum",
-        displayName = "Ivory Vellum",
-        colorHex = 0xFFFBF7EE,
-        r = 0.9843f,
-        g = 0.9686f,
-        b = 0.9333f,
-        isDark = false
-    ),
-    SADDLE_DARK(
-        id = "saddle_dark",
-        displayName = "Saddle Noir",
-        colorHex = 0xFF181512,
-        r = 0.0941f,
-        g = 0.0824f,
-        b = 0.0706f,
-        isDark = true
-    ),
-    FIELD_CREAM(
-        id = "field_cream",
-        displayName = "Field Journal Cream",
-        colorHex = 0xFFF7F4EB,
-        r = 0.9686f,
-        g = 0.9568f,
-        b = 0.9215f,
-        isDark = false
-    ),
-    ESPRESSO_DARK(
-        id = "espresso_dark",
-        displayName = "Espresso Charcoal",
-        colorHex = 0xFF151412,
-        r = 0.0824f,
-        g = 0.0784f,
-        b = 0.0706f,
-        isDark = true
-    ),
-    ARCHIVAL_PARCHMENT(
-        id = "archival_parchment",
-        displayName = "Archival Parchment",
-        colorHex = 0xFFFAF4E6,
-        r = 0.9804f,
-        g = 0.9569f,
-        b = 0.9020f,
-        isDark = false
-    ),
-    OXFORD_DARK(
-        id = "oxford_dark",
-        displayName = "Codex Noir",
-        colorHex = 0xFF141215,
-        r = 0.0784f,
-        g = 0.0706f,
-        b = 0.0824f,
-        isDark = true
     );
 
     val colorInt: Int
@@ -114,22 +58,12 @@ enum class PaperColor(
             return entries.find { it.id == id } ?: WHITE
         }
 
-        fun forTheme(preset: NotebookThemePreset, isDark: Boolean): PaperColor {
-            return when (preset) {
-                NotebookThemePreset.CLASSIC_SADDLE -> if (isDark) SADDLE_DARK else IVORY_VELLUM
-                NotebookThemePreset.TRAVELERS_ESPRESSO -> if (isDark) ESPRESSO_DARK else FIELD_CREAM
-                NotebookThemePreset.VINTAGE_OXFORD -> if (isDark) OXFORD_DARK else ARCHIVAL_PARCHMENT
-                NotebookThemePreset.STUDIO_CLEAN -> if (isDark) BLACK else WHITE
-            }
-        }
-
         fun forTheme(isDark: Boolean): PaperColor {
-            return forTheme(NotebookThemePreset.CLASSIC_SADDLE, isDark)
+            return if (isDark) BLACK else WHITE
         }
 
         fun forTheme(presetName: String, isDark: Boolean): PaperColor {
-            val preset = NotebookThemePreset.fromId(presetName)
-            return forTheme(preset, isDark)
+            return forTheme(isDark)
         }
     }
 }
