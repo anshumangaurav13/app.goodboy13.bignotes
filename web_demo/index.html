@@ -28,7 +28,7 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background-color: #f4ede2;
+    background-color: #ffffff;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     touch-action: none;
   }
@@ -525,22 +525,23 @@
       </div>
 
       <div class="control-group">
-        <span class="label-name" style="font-size:11px;">Ink Palette</span>
+        <span class="label-name" style="font-size:11px;">Ink Palette (BigNotes Official)</span>
         <div class="swatch-row">
-          <div class="color-swatch active" data-color="#0f172a" style="background: #0f172a;" title="Carbon Black"></div>
+          <div class="color-swatch active" data-color="#000000" style="background: #000000;" title="Ink Black"></div>
+          <div class="color-swatch" data-color="#475569" style="background: #475569;" title="Slate"></div>
+          <div class="color-swatch" data-color="#dc2626" style="background: #dc2626;" title="Crimson"></div>
           <div class="color-swatch" data-color="#0018c8" style="background: #0018c8;" title="Royal Blue"></div>
-          <div class="color-swatch" data-color="#b91c1c" style="background: #b91c1c;" title="Oxblood Red"></div>
-          <div class="color-swatch" data-color="#047857" style="background: #047857;" title="Emerald Green"></div>
-          <div class="color-swatch" data-color="#581c87" style="background: #581c87;" title="Royal Violet"></div>
-          <input type="color" id="custom-color-picker" value="#0f172a" style="width:24px; height:24px; padding:0; border:none; border-radius:50%; cursor:pointer; background:none;">
+          <div class="color-swatch" data-color="#059669" style="background: #059669;" title="Emerald"></div>
+          <div class="color-swatch" data-color="#d97706" style="background: #d97706;" title="Amber"></div>
+          <input type="color" id="custom-color-picker" value="#000000" style="width:24px; height:24px; padding:0; border:none; border-radius:50%; cursor:pointer; background:none;">
         </div>
       </div>
 
       <div class="control-group">
         <span class="label-name" style="font-size:11px; margin-bottom:4px;">Paper Background</span>
         <select id="sel-paper">
+          <option value="#ffffff" selected>Pure White (#ffffff)</option>
           <option value="#f4ede2">Warm Parchment (#f4ede2)</option>
-          <option value="#ffffff">Pure White (#ffffff)</option>
           <option value="#faf7f0">Ivory Notebook (#faf7f0)</option>
           <option value="#18181b">Dark Velvet Paper (#18181b)</option>
         </select>
@@ -577,24 +578,24 @@
 const CONFIG = {
   baseWidth: 5.5,
   inkDilution: 0.20,
-  bleedRatio: 0.72,
-  bleedPower: 3.2,
-  coreShiftRatio: -0.20,
-  bleedBaseOpacity: 0.36,
-  paperGrainMix: 0.60,
-  aaWidth: 0.55,
-  quadMarginRatio: 0.72,
+  bleedRatio: 0.98,
+  bleedPower: 1.90,
+  coreShiftRatio: -0.25,
+  bleedBaseOpacity: 0.66,
+  paperGrainMix: 0.46,
+  aaWidth: 0.50,
+  quadMarginRatio: 0.68,
 
   // Physical Wet-Ink Optics & Subtractive Multiply
   multiplyStrength: 0.85,
   selfOverlapDarkening: 1.10,
-  fiberFeathering: 0.60,
-  meniscusRim: 0.38,
-  wetSheen: 0.80,
-  chromaHalo: 0.80,
+  fiberFeathering: 0.46,
+  meniscusRim: 0.20,
+  wetSheen: 0.48,
+  chromaHalo: 0.22,
 
-  color: [15 / 255, 23 / 255, 42 / 255, 1.0], // Carbon Black #0F172A
-  paperColor: "#f4ede2",
+  color: [0.0, 0.0, 0.0, 1.0], // Ink Black #000000
+  paperColor: "#ffffff",
   stylusOnly: false
 };
 
@@ -602,19 +603,19 @@ const PRESETS = {
   BIGNOTES_CURRENT: {
     baseWidth: 5.5,
     inkDilution: 0.20,
-    bleedRatio: 0.72,
-    bleedPower: 3.2,
-    coreShiftRatio: -0.20,
-    bleedBaseOpacity: 0.36,
-    paperGrainMix: 0.60,
-    aaWidth: 0.55,
-    quadMarginRatio: 0.72,
+    bleedRatio: 0.98,
+    bleedPower: 1.90,
+    coreShiftRatio: -0.25,
+    bleedBaseOpacity: 0.66,
+    paperGrainMix: 0.46,
+    aaWidth: 0.50,
+    quadMarginRatio: 0.68,
     multiplyStrength: 0.85,
     selfOverlapDarkening: 1.10,
-    fiberFeathering: 0.60,
-    meniscusRim: 0.38,
-    wetSheen: 0.80,
-    chromaHalo: 0.80
+    fiberFeathering: 0.46,
+    meniscusRim: 0.20,
+    wetSheen: 0.48,
+    chromaHalo: 0.22
   },
   SUBTLE_SOFT: {
     baseWidth: 5.5,
