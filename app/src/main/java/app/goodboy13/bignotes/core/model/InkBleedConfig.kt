@@ -16,7 +16,7 @@ data class InkBleedConfig(
     val quadMarginRatio: Float = 0.68f,   // Extra tessellation polygon margin: 68% of nominal radius
 
     // Physical Wet-Ink Optics
-    val inkDilution: Float = 0.10f,       // Single-dab pigment dilution
+    val inkDilution: Float = 0.20f,       // Single-dab pigment dilution
     val fiberFeathering: Float = 0.46f,   // Capillary feathering into cellulose paper fibers
     val meniscusRim: Float = 0.20f,       // Surface tension / coffee-ring perimeter darkening
     val wetSheen: Float = 0.48f,          // Liquid wet specular sheen along centerline
