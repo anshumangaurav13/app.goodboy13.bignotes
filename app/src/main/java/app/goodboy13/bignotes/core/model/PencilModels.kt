@@ -51,7 +51,13 @@ data class StrokePoint(
     val x: Float,
     val y: Float,
     val pressure: Float,
-    val timeMillis: Long
+    val timeMillis: Long,
+    val timeNanos: Long = timeMillis * 1_000_000L
+)
+
+data class StrokeStabilizationConfig(
+    val enabled: Boolean = true,
+    val level: Float = 0.50f
 )
 
 data class BezierControlPoints(

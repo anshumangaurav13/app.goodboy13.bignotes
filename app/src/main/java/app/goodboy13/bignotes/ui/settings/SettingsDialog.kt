@@ -62,7 +62,7 @@ enum class SettingsCategory(
 ) {
     PEN_STYLUS(
         "Pen & Stylus",
-        "Palm rejection, prediction, curves & snapping",
+        "Palm rejection, stabilization, curves & snapping",
         Icons.Default.Edit,
         Color(0xFF6366F1)
     ),
@@ -114,6 +114,10 @@ fun SettingsDialog(
     onGridConfigChange: (GridConfig) -> Unit = {},
     strictStylusMode: Boolean = true,
     onStrictStylusModeChange: (Boolean) -> Unit = {},
+    strokeStabilizationEnabled: Boolean = true,
+    onStrokeStabilizationEnabledChange: (Boolean) -> Unit = {},
+    strokeStabilizationLevel: Float = 0.50f,
+    onStrokeStabilizationLevelChange: (Float) -> Unit = {},
     multiFingerGesturesEnabled: Boolean = true,
     onMultiFingerGesturesEnabledChange: (Boolean) -> Unit = {},
     shapeSnappingEnabled: Boolean = true,
@@ -339,6 +343,10 @@ fun SettingsDialog(
                                 SettingsCategory.PEN_STYLUS -> PenStylusDetail(
                                     strictStylusMode = strictStylusMode,
                                     onStrictStylusModeChange = onStrictStylusModeChange,
+                                    strokeStabilizationEnabled = strokeStabilizationEnabled,
+                                    onStrokeStabilizationEnabledChange = onStrokeStabilizationEnabledChange,
+                                    strokeStabilizationLevel = strokeStabilizationLevel,
+                                    onStrokeStabilizationLevelChange = onStrokeStabilizationLevelChange,
                                     shapeSnappingEnabled = shapeSnappingEnabled,
                                     onShapeSnappingEnabledChange = onShapeSnappingEnabledChange,
                                     shapeSnapDelayMs = shapeSnapDelayMs,
@@ -445,6 +453,10 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 private fun PenStylusDetail(
     strictStylusMode: Boolean,
     onStrictStylusModeChange: (Boolean) -> Unit,
+    strokeStabilizationEnabled: Boolean,
+    onStrokeStabilizationEnabledChange: (Boolean) -> Unit,
+    strokeStabilizationLevel: Float,
+    onStrokeStabilizationLevelChange: (Float) -> Unit,
     shapeSnappingEnabled: Boolean,
     onShapeSnappingEnabledChange: (Boolean) -> Unit,
     shapeSnapDelayMs: Long,
@@ -492,6 +504,61 @@ private fun PenStylusDetail(
                 checked = strictStylusMode,
                 onCheckedChange = onStrictStylusModeChange,
                 modifier = Modifier.scale(0.8f)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    SectionHeader("STROKE STABILIZATION")
+    SettingsCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                Text(
+                    text = "Stroke Stabilization",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Real-time physical spring-mass filtering with nanosecond integration to eliminate stylus wobble and digitizer jitter",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+            Switch(
+                checked = strokeStabilizationEnabled,
+                onCheckedChange = onStrokeStabilizationEnabledChange,
+                modifier = Modifier.scale(0.8f)
+            )
+        }
+
+        if (strokeStabilizationEnabled) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Stabilization Strength",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Text(
+                    text = "${(strokeStabilizationLevel * 100f).roundToInt()}%",
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Slider(
+                value = strokeStabilizationLevel,
+                onValueChange = onStrokeStabilizationLevelChange,
+                valueRange = 0.05f..1.0f,
+                steps = 18,
+                modifier = Modifier.fillMaxWidth().height(24.dp)
             )
         }
     }
@@ -740,7 +807,13 @@ private fun PenStylusDetail(
         modifier = Modifier
             .fillMaxWidth()
             .height(80.dp)
-            .pointerInput(pressureBezier, velocityBezier) {
+            .pointerInput(pressureBezier, velocityBezier, strokeStabilizationEnabled, strokeStabilizationLevel) {
+                val padStabilizer = app.goodboy13.bignotes.core.geometry.StrokeStabilizer(
+                    app.goodboy13.bignotes.core.model.StrokeStabilizationConfig(
+                        enabled = strokeStabilizationEnabled,
+                        level = strokeStabilizationLevel
+                    )
+                )
                 awaitPointerEventScope {
                     while (true) {
                         val downEvent = awaitPointerEvent()
@@ -753,7 +826,13 @@ private fun PenStylusDetail(
                         val rawP = if (down.pressure > 0f) down.pressure else 0.5f
                         val effP = pressureBezier.solveY(rawP)
                         val w = (effP * 12f + 2f).coerceIn(2f, 16f)
-                        currentTestStroke = listOf(TestStrokePoint(down.position.x, down.position.y, w))
+                        val downNanos = down.uptimeMillis * 1_000_000L
+                        val startPt = if (strokeStabilizationEnabled) {
+                            padStabilizer.start(down.position.x, down.position.y, effP, downNanos)
+                        } else {
+                            app.goodboy13.bignotes.core.model.StrokePoint(down.position.x, down.position.y, effP, down.uptimeMillis, downNanos)
+                        }
+                        currentTestStroke = listOf(TestStrokePoint(startPt.x, startPt.y, w))
 
                         while (true) {
                             val event = awaitPointerEvent()
@@ -761,6 +840,12 @@ private fun PenStylusDetail(
                             if (!change.pressed) {
                                 change.consume()
                                 if (currentTestStroke.isNotEmpty()) {
+                                    if (strokeStabilizationEnabled) {
+                                        val changeNanos = change.uptimeMillis * 1_000_000L
+                                        val catchUps = padStabilizer.finish(change.position.x, change.position.y, 0.5f, changeNanos)
+                                        val lastWidth = currentTestStroke.lastOrNull()?.width ?: w
+                                        currentTestStroke = currentTestStroke + catchUps.map { TestStrokePoint(it.x, it.y, lastWidth) }
+                                    }
                                     testStrokes = testStrokes + listOf(currentTestStroke)
                                     currentTestStroke = emptyList()
                                 }
@@ -785,7 +870,14 @@ private fun PenStylusDetail(
                             val rawPressure = if (change.pressure > 0f) change.pressure else 0.5f
                             val effectivePressure = (pressureBezier.solveY(rawPressure) * (thinning * thinning)).coerceIn(0.01f, 1.0f)
                             val width = (effectivePressure * 13f + 1.5f).coerceIn(1.5f, 16f)
-                            currentTestStroke = currentTestStroke + TestStrokePoint(change.position.x, change.position.y, width)
+
+                            val changeNanos = change.uptimeMillis * 1_000_000L
+                            val pt = if (strokeStabilizationEnabled) {
+                                padStabilizer.update(change.position.x, change.position.y, effectivePressure, changeNanos)
+                            } else {
+                                app.goodboy13.bignotes.core.model.StrokePoint(change.position.x, change.position.y, effectivePressure, change.uptimeMillis, changeNanos)
+                            }
+                            currentTestStroke = currentTestStroke + TestStrokePoint(pt.x, pt.y, width)
                         }
                     }
                 }

@@ -86,6 +86,8 @@ fun BigNotesCanvasView(
     bezierConfig: BezierControlPoints = app.goodboy13.bignotes.core.model.PressureCurveDefaults.STANDARD,
     velocityBezierConfig: BezierControlPoints = app.goodboy13.bignotes.core.model.VelocityCurveDefaults.CALLIGRAPHIC,
     velocityThinning: Float = 0.60f,
+    strokeStabilizationEnabled: Boolean = true,
+    strokeStabilizationLevel: Float = 0.50f,
     pageFormat: PageFormat = PageFormat.A4,
     margin: PdfMargin = PdfMargin.NONE,
     showPageSeparators: Boolean = true,
@@ -148,6 +150,8 @@ fun BigNotesCanvasView(
                     this.bezierConfig = bezierConfig
                     this.velocityBezierConfig = velocityBezierConfig
                     this.velocityThinning = velocityThinning
+                    this.strokeStabilizationEnabled = strokeStabilizationEnabled
+                    this.strokeStabilizationLevel = strokeStabilizationLevel
                     this.onStrokeStarted = onStrokeStarted
                     renderer.currentTone = PencilTone.INK_BLACK
                     renderer.currentBaseWidth = strokeSize
@@ -212,6 +216,8 @@ fun BigNotesCanvasView(
                 view.bezierConfig = bezierConfig
                 view.velocityBezierConfig = velocityBezierConfig
                 view.velocityThinning = velocityThinning
+                view.strokeStabilizationEnabled = strokeStabilizationEnabled
+                view.strokeStabilizationLevel = strokeStabilizationLevel
                 view.onStrokeStarted = onStrokeStarted
                 view.renderer.currentBaseWidth = strokeSize
                 view.eraserRadius = eraserRadius

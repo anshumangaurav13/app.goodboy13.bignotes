@@ -248,6 +248,12 @@ fun BigNotesMainScreen(
     var strictStylusMode by remember {
         mutableStateOf(prefs.getBoolean("strict_stylus_mode", true))
     }
+    var strokeStabilizationEnabled by remember {
+        mutableStateOf(prefs.getBoolean("stroke_stabilization_enabled", true))
+    }
+    var strokeStabilizationLevel by remember {
+        mutableFloatStateOf(prefs.getFloat("stroke_stabilization_level", 0.50f))
+    }
     var noteSortOrder by remember {
         val savedOrder = prefs.getString("note_sort_order", NoteSortOrder.MODIFIED_DESC.name) ?: NoteSortOrder.MODIFIED_DESC.name
         mutableStateOf(try { NoteSortOrder.valueOf(savedOrder) } catch (e: Exception) { NoteSortOrder.MODIFIED_DESC })
@@ -788,11 +794,13 @@ fun BigNotesMainScreen(
         }
     }
 
-    // Update stylus pressure curve and velocity curve on canvas
-    LaunchedEffect(pressureBezierConfig, velocityBezierConfig, canvasView) {
+    // Update stylus pressure curve, velocity curve, and stroke stabilization on canvas
+    LaunchedEffect(pressureBezierConfig, velocityBezierConfig, strokeStabilizationEnabled, strokeStabilizationLevel, canvasView) {
         val view = canvasView ?: return@LaunchedEffect
         view.bezierConfig = pressureBezierConfig
         view.velocityBezierConfig = velocityBezierConfig
+        view.strokeStabilizationEnabled = strokeStabilizationEnabled
+        view.strokeStabilizationLevel = strokeStabilizationLevel
     }
 
     // Load active note strokes and images asynchronously when note or canvas changes
@@ -910,6 +918,8 @@ fun BigNotesMainScreen(
             viewOffsetY = animatedTopOffsetPx,
             bezierConfig = pressureBezierConfig,
             velocityBezierConfig = velocityBezierConfig,
+            strokeStabilizationEnabled = strokeStabilizationEnabled,
+            strokeStabilizationLevel = strokeStabilizationLevel,
             pageFormat = selectedPdfPageFormat,
             margin = selectedPdfMargin,
             showPageSeparators = showPageSeparators,
@@ -1228,7 +1238,11 @@ fun BigNotesMainScreen(
                     .apply()
             },
             sidebarOffsetPx = animatedSidebarWidthPx,
-            statusBarHeightPx = statusBarTopPx.toFloat()
+            statusBarHeightPx = statusBarTopPx.toFloat(),
+            onOpenPenSettings = {
+                activeSettingsCategory = SettingsCategory.PEN_STYLUS
+                showSettingsDialog = true
+            }
         )
 
         // Dual Sidebar Overlay (smooth animated slide on top of canvas)
@@ -1444,6 +1458,18 @@ fun BigNotesMainScreen(
                 strictStylusMode = mode
                 canvasView?.strictStylusMode = mode
                 prefs.edit().putBoolean("strict_stylus_mode", mode).apply()
+            },
+            strokeStabilizationEnabled = strokeStabilizationEnabled,
+            onStrokeStabilizationEnabledChange = { enabled ->
+                strokeStabilizationEnabled = enabled
+                canvasView?.strokeStabilizationEnabled = enabled
+                prefs.edit().putBoolean("stroke_stabilization_enabled", enabled).apply()
+            },
+            strokeStabilizationLevel = strokeStabilizationLevel,
+            onStrokeStabilizationLevelChange = { level ->
+                strokeStabilizationLevel = level
+                canvasView?.strokeStabilizationLevel = level
+                prefs.edit().putFloat("stroke_stabilization_level", level).apply()
             },
             multiFingerGesturesEnabled = multiFingerGesturesEnabled,
             onMultiFingerGesturesEnabledChange = { enabled ->

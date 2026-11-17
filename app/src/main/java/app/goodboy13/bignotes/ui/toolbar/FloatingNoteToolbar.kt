@@ -3,8 +3,10 @@ package app.goodboy13.bignotes.ui.toolbar
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -75,6 +77,7 @@ fun FloatingNoteToolbar(
     onDockStateChanged: (edge: DockEdge, posFraction: Float, isCollapsed: Boolean) -> Unit = { _, _, _ -> },
     sidebarOffsetPx: Float = 0f,
     statusBarHeightPx: Float = 0f,
+    onOpenPenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -261,7 +264,8 @@ fun FloatingNoteToolbar(
                                     isRadialOpen = !isRadialOpen
                                 }
                             },
-                            onPositioned = { collapsedToolAnchor = it }
+                            onPositioned = { collapsedToolAnchor = it },
+                            onLongClick = onOpenPenSettings
                         )
 
                         Spacer(modifier = Modifier.width(4.dp))
@@ -317,7 +321,8 @@ fun FloatingNoteToolbar(
                                     isRadialOpen = !isRadialOpen
                                 }
                             },
-                            onPositioned = { fountainPenAnchor = it }
+                            onPositioned = { fountainPenAnchor = it },
+                            onLongClick = onOpenPenSettings
                         )
 
                         WritingToolButton(
@@ -331,7 +336,8 @@ fun FloatingNoteToolbar(
                                     isRadialOpen = !isRadialOpen
                                 }
                             },
-                            onPositioned = { pencilAnchor = it }
+                            onPositioned = { pencilAnchor = it },
+                            onLongClick = onOpenPenSettings
                         )
 
                         WritingToolButton(
@@ -345,7 +351,8 @@ fun FloatingNoteToolbar(
                                     isRadialOpen = !isRadialOpen
                                 }
                             },
-                            onPositioned = { highlighterAnchor = it }
+                            onPositioned = { highlighterAnchor = it },
+                            onLongClick = onOpenPenSettings
                         )
 
                         EraserButton(
@@ -504,7 +511,8 @@ fun FloatingNoteToolbar(
                                     isRadialOpen = !isRadialOpen
                                 }
                             },
-                            onPositioned = { collapsedToolAnchor = it }
+                            onPositioned = { collapsedToolAnchor = it },
+                            onLongClick = onOpenPenSettings
                         )
 
                         Spacer(modifier = Modifier.height(4.dp))
@@ -560,7 +568,8 @@ fun FloatingNoteToolbar(
                                     isRadialOpen = !isRadialOpen
                                 }
                             },
-                            onPositioned = { fountainPenAnchor = it }
+                            onPositioned = { fountainPenAnchor = it },
+                            onLongClick = onOpenPenSettings
                         )
 
                         WritingToolButton(
@@ -574,7 +583,8 @@ fun FloatingNoteToolbar(
                                     isRadialOpen = !isRadialOpen
                                 }
                             },
-                            onPositioned = { pencilAnchor = it }
+                            onPositioned = { pencilAnchor = it },
+                            onLongClick = onOpenPenSettings
                         )
 
                         WritingToolButton(
@@ -588,7 +598,8 @@ fun FloatingNoteToolbar(
                                     isRadialOpen = !isRadialOpen
                                 }
                             },
-                            onPositioned = { highlighterAnchor = it }
+                            onPositioned = { highlighterAnchor = it },
+                            onLongClick = onOpenPenSettings
                         )
 
                         EraserButton(
@@ -740,13 +751,15 @@ private fun DragHandle(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WritingToolButton(
     tool: ActiveTool,
     isActive: Boolean,
     currentColor: Color,
     onToolClick: () -> Unit,
-    onPositioned: (Offset) -> Unit
+    onPositioned: (Offset) -> Unit,
+    onLongClick: (() -> Unit)? = null
 ) {
     val icon = when (tool) {
         ActiveTool.FOUNTAIN_PEN -> CustomIcons.FountainPen
@@ -755,20 +768,22 @@ private fun WritingToolButton(
         else -> CustomIcons.FountainPen
     }
 
-    IconButton(
-        onClick = onToolClick,
-        colors = if (isActive) {
-            IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                contentColor = MaterialTheme.colorScheme.primary
-            )
-        } else IconButtonDefaults.iconButtonColors(),
+    Box(
         modifier = Modifier
             .size(36.dp)
+            .clip(CircleShape)
+            .background(
+                if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
+            )
+            .combinedClickable(
+                onClick = onToolClick,
+                onLongClick = onLongClick
+            )
             .onGloballyPositioned { coords ->
                 val bounds = coords.boundsInRoot()
                 onPositioned(Offset(bounds.left + bounds.width / 2f, bounds.top + bounds.height / 2f))
-            }
+            },
+        contentAlignment = Alignment.Center
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(

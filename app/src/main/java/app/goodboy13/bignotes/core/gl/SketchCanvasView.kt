@@ -19,6 +19,7 @@ import app.goodboy13.bignotes.core.eraser.EraserEngine
 import app.goodboy13.bignotes.core.eraser.EraserSession
 import app.goodboy13.bignotes.core.eraser.SpatialStrokeIndex
 import app.goodboy13.bignotes.core.geometry.DabGenerator
+import app.goodboy13.bignotes.core.geometry.StrokeStabilizer
 import app.goodboy13.bignotes.core.geometry.StrokeTessellator
 import app.goodboy13.bignotes.core.history.CanvasAction
 import app.goodboy13.bignotes.core.history.UndoRedoManager
@@ -275,6 +276,21 @@ class SketchCanvasView @JvmOverloads constructor(
     // Fountain Pen Velocity Thinning Curve (maps speedFactor [0..1] -> thinning reduction [0..1])
     var velocityBezierConfig: BezierControlPoints = app.goodboy13.bignotes.core.model.VelocityCurveDefaults.CALLIGRAPHIC
     var velocityThinning: Float = 0.60f
+
+    // Stroke Stabilization
+    var strokeStabilizationEnabled: Boolean = true
+        set(value) {
+            field = value
+            strokeStabilizer.config = strokeStabilizer.config.copy(enabled = value)
+        }
+    var strokeStabilizationLevel: Float = 0.50f
+        set(value) {
+            field = value
+            strokeStabilizer.config = strokeStabilizer.config.copy(level = value)
+        }
+    private val strokeStabilizer = StrokeStabilizer(
+        StrokeStabilizationConfig(enabled = strokeStabilizationEnabled, level = strokeStabilizationLevel)
+    )
 
     // Stylus Velocity Tracker for dynamic pen thinning and EMA filtering
     private var lastPointX = 0f
@@ -1110,22 +1126,43 @@ class SketchCanvasView @JvmOverloads constructor(
                         } else {
                             val lastPoint = activeStrokePoints.lastOrNull()
                             val commitPressure = lastPoint?.pressure ?: effPressure
-                            if (lastPoint == null) {
-                                activeStrokePoints.add(StrokePoint(wx, wy, commitPressure, event.eventTime))
-                            } else {
-                                val dist = kotlin.math.hypot((wx - lastPoint.x).toDouble(), (wy - lastPoint.y).toDouble()).toFloat()
-                                if (dist >= 0.5f) {
-                                    val curPt = StrokePoint(wx, wy, commitPressure, event.eventTime)
-                                    activeStrokePoints.add(curPt)
-                                    val gen = liveDabGenerator
+                            val curTimeNanos = getEventTimeNanos(event)
+                            if (strokeStabilizationEnabled) {
+                                val catchUps = strokeStabilizer.finish(wx, wy, commitPressure, curTimeNanos)
+                                val gen = liveDabGenerator
+                                val poolBuf = rawDabPool[rawDabPoolIdx]
+                                rawDabPoolIdx = (rawDabPoolIdx + 1) % rawDabPool.size
+                                var catchUpDabs = 0
+                                for (p in catchUps) {
+                                    activeStrokePoints.add(p)
                                     if (gen != null) {
-                                        val poolBuf = rawDabPool[rawDabPoolIdx]
-                                        rawDabPoolIdx = (rawDabPoolIdx + 1) % rawDabPool.size
-                                        val finalDabsCount = gen.addPointRaw(wx, wy, commitPressure, poolBuf, 0)
-                                        if (finalDabsCount > 0) {
-                                            frontBufferedRenderer?.renderFrontBufferedLayer(
-                                                FrontBufferPacket(rawDabs = poolBuf, rawDabCount = finalDabsCount, clearBeforeDraw = false)
-                                            )
+                                        val added = gen.addPointRaw(p.x, p.y, p.pressure, poolBuf, catchUpDabs * 3)
+                                        catchUpDabs += added
+                                    }
+                                }
+                                if (catchUpDabs > 0) {
+                                    frontBufferedRenderer?.renderFrontBufferedLayer(
+                                        FrontBufferPacket(rawDabs = poolBuf, rawDabCount = catchUpDabs, clearBeforeDraw = false)
+                                    )
+                                }
+                            } else {
+                                if (lastPoint == null) {
+                                    activeStrokePoints.add(StrokePoint(wx, wy, commitPressure, event.eventTime, curTimeNanos))
+                                } else {
+                                    val dist = kotlin.math.hypot((wx - lastPoint.x).toDouble(), (wy - lastPoint.y).toDouble()).toFloat()
+                                    if (dist >= 0.5f) {
+                                        val curPt = StrokePoint(wx, wy, commitPressure, event.eventTime, curTimeNanos)
+                                        activeStrokePoints.add(curPt)
+                                        val gen = liveDabGenerator
+                                        if (gen != null) {
+                                            val poolBuf = rawDabPool[rawDabPoolIdx]
+                                            rawDabPoolIdx = (rawDabPoolIdx + 1) % rawDabPool.size
+                                            val finalDabsCount = gen.addPointRaw(wx, wy, commitPressure, poolBuf, 0)
+                                            if (finalDabsCount > 0) {
+                                                frontBufferedRenderer?.renderFrontBufferedLayer(
+                                                    FrontBufferPacket(rawDabs = poolBuf, rawDabCount = finalDabsCount, clearBeforeDraw = false)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -1139,6 +1176,7 @@ class SketchCanvasView @JvmOverloads constructor(
                 MotionEvent.ACTION_CANCEL -> {
                     cancelHoldToEraseTimer()
                     cancelShapeSnapTimer()
+                    strokeStabilizer.reset()
                     if (isHoldToEraseActive) {
                         finalizeEraserSession(effectiveEraserMode)
                     } else if (isErasing) {
@@ -1506,7 +1544,11 @@ class SketchCanvasView @JvmOverloads constructor(
         lastRecordedTimeNanos = timeNanos
         smoothedStylusSpeed = 0f
 
-        val pt = StrokePoint(wx, wy, pressure, time)
+        val pt = if (strokeStabilizationEnabled) {
+            strokeStabilizer.start(wx, wy, pressure, timeNanos)
+        } else {
+            StrokePoint(wx, wy, pressure, time, timeNanos)
+        }
         activeStrokePoints.add(pt)
 
         shapeSnapRunnable?.let { shapeSnapHandler.removeCallbacks(it) }
@@ -1525,7 +1567,7 @@ class SketchCanvasView @JvmOverloads constructor(
         val stepDist = StrokeTessellator.getStepDistance(renderer.currentBaseWidth, isInk = isInk, isHighlighter = isHighlighter)
         val gen = DabGenerator(stepDist)
         liveDabGenerator = gen
-        val dabs = gen.start(wx, wy, pressure)
+        val dabs = gen.start(pt.x, pt.y, pt.pressure)
         frontBufferedRenderer?.renderFrontBufferedLayer(
             FrontBufferPacket(dabs = dabs, clearBeforeDraw = true)
         )
@@ -1634,10 +1676,14 @@ class SketchCanvasView @JvmOverloads constructor(
                 }
                 val finalBakedPressure = (hBakedPressure * (thinning * thinning)).coerceIn(0.01f, 1.0f)
 
-                activeStrokePoints.add(
-                    StrokePoint(hwx, hwy, finalBakedPressure, hTime)
-                )
-                val added = gen.addPointRaw(hwx, hwy, finalBakedPressure, poolBuf, totalRawDabs * 3)
+                val ptToAdd = if (strokeStabilizationEnabled) {
+                    strokeStabilizer.update(hwx, hwy, finalBakedPressure, hTimeNanos)
+                } else {
+                    StrokePoint(hwx, hwy, finalBakedPressure, hTime, hTimeNanos)
+                }
+
+                activeStrokePoints.add(ptToAdd)
+                val added = gen.addPointRaw(ptToAdd.x, ptToAdd.y, ptToAdd.pressure, poolBuf, totalRawDabs * 3)
                 totalRawDabs += added
             }
 
@@ -1669,8 +1715,14 @@ class SketchCanvasView @JvmOverloads constructor(
             }
             val finalEffPressure = (effPressure * (thinning * thinning)).coerceIn(0.01f, 1.0f)
 
-            activeStrokePoints.add(StrokePoint(wx, wy, finalEffPressure, event.eventTime))
-            val added = gen.addPointRaw(wx, wy, finalEffPressure, poolBuf, totalRawDabs * 3)
+            val ptToAdd = if (strokeStabilizationEnabled) {
+                strokeStabilizer.update(wx, wy, finalEffPressure, curTimeNanos)
+            } else {
+                StrokePoint(wx, wy, finalEffPressure, event.eventTime, curTimeNanos)
+            }
+
+            activeStrokePoints.add(ptToAdd)
+            val added = gen.addPointRaw(ptToAdd.x, ptToAdd.y, ptToAdd.pressure, poolBuf, totalRawDabs * 3)
             totalRawDabs += added
 
             if (totalRawDabs > 0) {
@@ -1683,6 +1735,7 @@ class SketchCanvasView @JvmOverloads constructor(
     private fun finalizeCurrentStroke() {
         lastPointTimeNanos = 0L
         lastRecordedTimeNanos = 0L
+        strokeStabilizer.reset()
         onPenContactChanged?.invoke(false)
         if (activeStrokePoints.isNotEmpty()) {
             val isHighlighter = activeTool == ActiveTool.HIGHLIGHTER
