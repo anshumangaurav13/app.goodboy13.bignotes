@@ -209,6 +209,13 @@ class ChunkedVboStore {
         appendStrokes(strokes, getMesh)
     }
 
+    @Synchronized
+    fun markAllDirty() {
+        for (chunk in chunks) {
+            chunk.isDirty = true
+        }
+    }
+
     private val pendingDeleteVbos = mutableListOf<Int>()
 
     private fun deleteChunkVbo(chunk: VboChunk) {

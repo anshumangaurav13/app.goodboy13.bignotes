@@ -51,6 +51,7 @@ import app.goodboy13.bignotes.core.export.PdfMargin
 import app.goodboy13.bignotes.core.model.HoverCursorOrientation
 import app.goodboy13.bignotes.core.model.GridConfig
 import app.goodboy13.bignotes.core.model.GridStyle
+import app.goodboy13.bignotes.core.model.InkBleedConfig
 import app.goodboy13.bignotes.core.model.PaperColor
 import app.goodboy13.bignotes.core.model.PressureCurveDefaults
 import app.goodboy13.bignotes.core.model.VelocityCurveDefaults
@@ -73,6 +74,12 @@ enum class SettingsCategory(
         "Palm rejection, stabilization, curves & snapping",
         Icons.Default.Edit,
         Color(0xFF6366F1)
+    ),
+    INK_PARAMS(
+        "Ink & Bleed",
+        "Pigment dilution, capillary bleed, paper grain & presets",
+        Icons.Default.WaterDrop,
+        Color(0xFF0EA5E9)
     ),
     CANVAS_GRID(
         "Canvas & Grid",
@@ -140,6 +147,8 @@ fun SettingsDialog(
     onHoverCursorEnabledChange: (Boolean) -> Unit = {},
     hoverCursorOrientation: HoverCursorOrientation = HoverCursorOrientation.UP_RIGHT,
     onHoverCursorOrientationChange: (HoverCursorOrientation) -> Unit = {},
+    inkBleedConfig: InkBleedConfig = InkBleedConfig.DEFAULT,
+    onInkBleedConfigChange: (InkBleedConfig) -> Unit = {},
     backupFolderDisplayName: String = "",
     isBackupFolderConfigured: Boolean = false,
     onSelectBackupFolder: () -> Unit = {},
@@ -386,6 +395,11 @@ fun SettingsDialog(
                                     onPressureBezierChange = onPressureBezierChange,
                                     velocityBezier = velocityBezier,
                                     onVelocityBezierChange = onVelocityBezierChange
+                                )
+
+                                SettingsCategory.INK_PARAMS -> InkParamsDetail(
+                                    config = inkBleedConfig,
+                                    onConfigChange = onInkBleedConfigChange
                                 )
 
                                 SettingsCategory.CANVAS_GRID -> CanvasGridDetail(
@@ -939,6 +953,232 @@ private fun PenStylusDetail(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun InkParamsDetail(
+    config: InkBleedConfig,
+    onConfigChange: (InkBleedConfig) -> Unit
+) {
+    val reducedMotion = rememberReducedMotion()
+    val isDefault = config == InkBleedConfig.DEFAULT
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SectionHeader("PRESETS")
+        if (!isDefault) {
+            Text(
+                text = "Reset Default",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { onConfigChange(InkBleedConfig.DEFAULT) }
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        InkBleedConfig.PRESETS.forEach { (label, preset) ->
+            val isSelected = config == preset
+            val chipBg by animateColorAsState(
+                targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                animationSpec = BigNotesMotion.snappyTween(150, reducedMotion),
+                label = "inkPresetBg"
+            )
+            val chipFg by animateColorAsState(
+                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                animationSpec = BigNotesMotion.snappyTween(150, reducedMotion),
+                label = "inkPresetFg"
+            )
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = chipBg,
+                border = BorderStroke(
+                    1.dp,
+                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                ),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onConfigChange(preset) }
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 11.5.sp
+                    ),
+                    color = chipFg,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    SectionHeader("PIGMENT & CORE")
+    SettingsCard {
+        InkParamSlider(
+            label = "Pigment Dilution",
+            description = "Single-stroke ink opacity before subtractive overlap",
+            value = config.inkDilution,
+            valueRange = 0.02f..1.00f,
+            formattedValue = "${(config.inkDilution * 100f).roundToInt()}%",
+            onValueChange = { onConfigChange(config.copy(inkDilution = it)) }
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        val shiftPct = (config.coreShiftRatio * 100f).roundToInt()
+        InkParamSlider(
+            label = "Core Shift",
+            description = "Expands or tightens solid ink core relative to nib radius",
+            value = config.coreShiftRatio,
+            valueRange = -0.50f..0.50f,
+            formattedValue = if (shiftPct >= 0) "+$shiftPct%" else "$shiftPct%",
+            onValueChange = { onConfigChange(config.copy(coreShiftRatio = it)) }
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        InkParamSlider(
+            label = "Edge Anti-Aliasing",
+            description = "Screen-space sub-pixel smoothing band width",
+            value = config.aaWidth,
+            valueRange = 0.10f..2.50f,
+            formattedValue = String.format(Locale.US, "%.2fpx", config.aaWidth),
+            onValueChange = { onConfigChange(config.copy(aaWidth = it)) }
+        )
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    SectionHeader("CAPILLARY BLEED & OPTICS")
+    SettingsCard {
+        InkParamSlider(
+            label = "Bleed Width",
+            description = "Outward capillary halo extent relative to stroke radius",
+            value = config.bleedRatio,
+            valueRange = 0.00f..1.50f,
+            formattedValue = "${(config.bleedRatio * 100f).roundToInt()}%",
+            onValueChange = { onConfigChange(config.copy(bleedRatio = it)) }
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        InkParamSlider(
+            label = "Bleed Base Opacity",
+            description = "Starting opacity where bleed meets the ink core",
+            value = config.bleedBaseOpacity,
+            valueRange = 0.00f..1.00f,
+            formattedValue = "${(config.bleedBaseOpacity * 100f).roundToInt()}%",
+            onValueChange = { onConfigChange(config.copy(bleedBaseOpacity = it)) }
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        InkParamSlider(
+            label = "Bleed Falloff",
+            description = "Decay exponent from core edge to outer halo",
+            value = config.bleedPower,
+            valueRange = 0.50f..4.50f,
+            formattedValue = String.format(Locale.US, "%.2f", config.bleedPower),
+            onValueChange = { onConfigChange(config.copy(bleedPower = it)) }
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        InkParamSlider(
+            label = "Meniscus Rim",
+            description = "Surface-tension coffee-ring darkening along core perimeter",
+            value = config.meniscusRim,
+            valueRange = 0.00f..1.00f,
+            formattedValue = "${(config.meniscusRim * 100f).roundToInt()}%",
+            onValueChange = { onConfigChange(config.copy(meniscusRim = it)) }
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        InkParamSlider(
+            label = "Chroma Halo",
+            description = "Chromatographic dye separation tint at bleed fringe",
+            value = config.chromaHalo,
+            valueRange = 0.00f..1.00f,
+            formattedValue = "${(config.chromaHalo * 100f).roundToInt()}%",
+            onValueChange = { onConfigChange(config.copy(chromaHalo = it)) }
+        )
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    SectionHeader("PAPER & TESSELLATION")
+    SettingsCard {
+        InkParamSlider(
+            label = "Fiber Feathering",
+            description = "Capillary wicking along cellulose paper tooth",
+            value = config.fiberFeathering,
+            valueRange = 0.00f..1.00f,
+            formattedValue = "${(config.fiberFeathering * 100f).roundToInt()}%",
+            onValueChange = { onConfigChange(config.copy(fiberFeathering = it)) }
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        InkParamSlider(
+            label = "Paper Grain Mix",
+            description = "Paper tooth modulation across the capillary bleed halo",
+            value = config.paperGrainMix,
+            valueRange = 0.00f..1.00f,
+            formattedValue = "${(config.paperGrainMix * 100f).roundToInt()}%",
+            onValueChange = { onConfigChange(config.copy(paperGrainMix = it)) }
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        InkParamSlider(
+            label = "Quad Margin",
+            description = "Vertex polygon margin bounding maximum bleed & feather halo",
+            value = config.quadMarginRatio,
+            valueRange = 0.20f..1.60f,
+            formattedValue = "${(config.quadMarginRatio * 100f).roundToInt()}%",
+            onValueChange = { onConfigChange(config.copy(quadMarginRatio = it)) }
+        )
+    }
+}
+
+@Composable
+private fun InkParamSlider(
+    label: String,
+    description: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    formattedValue: String,
+    onValueChange: (Float) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = formattedValue,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.5.sp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+        )
+        Slider(
+            value = value.coerceIn(valueRange.start, valueRange.endInclusive),
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            modifier = Modifier.fillMaxWidth().height(24.dp)
+        )
     }
 }
 

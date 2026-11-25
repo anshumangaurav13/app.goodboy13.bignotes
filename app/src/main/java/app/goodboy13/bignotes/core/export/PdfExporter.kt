@@ -5,6 +5,7 @@ import android.graphics.*
 import android.graphics.BlendMode
 import android.os.Build
 import android.graphics.pdf.PdfDocument
+import app.goodboy13.bignotes.core.model.InkBleedConfig
 import app.goodboy13.bignotes.core.model.PaperColor
 import app.goodboy13.bignotes.core.model.Stroke
 import app.goodboy13.bignotes.core.model.StrokePoint
@@ -30,7 +31,8 @@ object PdfExporter {
         paperColor: PaperColor = PaperColor.WHITE,
         options: PdfExportOptions = PdfExportOptions(),
         images: List<app.goodboy13.bignotes.core.model.CanvasImage> = emptyList(),
-        textBlocks: List<RecognizedTextBlock> = emptyList()
+        textBlocks: List<RecognizedTextBlock> = emptyList(),
+        inkBleedConfig: InkBleedConfig = InkBleedConfig.DEFAULT
     ): File = withContext(Dispatchers.IO) {
         val exportDir = File(context.cacheDir, "exports").apply { if (!exists()) mkdirs() }
         val sanitizedTitle = noteTitle.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifEmpty { "BigNote" }
@@ -73,7 +75,7 @@ object PdfExporter {
 
         val rasterizer = if (options.renderMode == PdfRenderMode.RASTER_300DPI || options.renderMode == PdfRenderMode.HYBRID) {
             try {
-                GlPageRasterizer(context)
+                GlPageRasterizer(context, inkBleedConfig)
             } catch (e: Throwable) {
                 android.util.Log.e("PdfExporter", "Failed to initialize GlPageRasterizer, falling back to CPU", e)
                 null

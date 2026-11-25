@@ -21,7 +21,10 @@ import kotlin.math.roundToInt
  * and continuous paper tooth noise) into an offscreen FBO, guaranteeing 100% visual parity
  * with the on-screen canvas.
  */
-class GlPageRasterizer(private val context: Context) : AutoCloseable {
+class GlPageRasterizer(
+    private val context: Context,
+    private val inkBleedConfig: InkBleedConfig = InkBleedConfig.DEFAULT
+) : AutoCloseable {
 
     private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
     private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
@@ -103,17 +106,17 @@ class GlPageRasterizer(private val context: Context) : AutoCloseable {
     private fun initGl() {
         val s = GraphiteShader(context)
         s.init()
-        s.bleedRatio = InkBleedConfig.DEFAULT.bleedRatio
-        s.bleedPower = InkBleedConfig.DEFAULT.bleedPower
-        s.coreShiftRatio = InkBleedConfig.DEFAULT.coreShiftRatio
-        s.bleedBaseOpacity = InkBleedConfig.DEFAULT.bleedBaseOpacity
-        s.aaWidth = InkBleedConfig.DEFAULT.aaWidth
-        s.paperGrainMix = InkBleedConfig.DEFAULT.paperGrainMix
-        s.inkDilution = InkBleedConfig.DEFAULT.inkDilution
-        s.fiberFeathering = InkBleedConfig.DEFAULT.fiberFeathering
-        s.meniscusRim = InkBleedConfig.DEFAULT.meniscusRim
-        s.wetSheen = InkBleedConfig.DEFAULT.wetSheen
-        s.chromaHalo = InkBleedConfig.DEFAULT.chromaHalo
+        s.bleedRatio = inkBleedConfig.bleedRatio
+        s.bleedPower = inkBleedConfig.bleedPower
+        s.coreShiftRatio = inkBleedConfig.coreShiftRatio
+        s.bleedBaseOpacity = inkBleedConfig.bleedBaseOpacity
+        s.aaWidth = inkBleedConfig.aaWidth
+        s.paperGrainMix = inkBleedConfig.paperGrainMix
+        s.inkDilution = inkBleedConfig.inkDilution
+        s.fiberFeathering = inkBleedConfig.fiberFeathering
+        s.meniscusRim = inkBleedConfig.meniscusRim
+        s.wetSheen = inkBleedConfig.wetSheen
+        s.chromaHalo = inkBleedConfig.chromaHalo
         shader = s
 
         noiseTextureId = NoiseTextureGenerator.createPaperToothTexture()

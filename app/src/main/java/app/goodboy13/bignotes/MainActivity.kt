@@ -294,7 +294,9 @@ fun BigNotesMainScreen(
     var isRestoreInProgress by remember { mutableStateOf(false) }
     var showTimelineDialog by remember { mutableStateOf(false) }
     var hasUnsavedChangesSinceLastSnapshot by remember { mutableStateOf(false) }
-    val inkBleedConfig = InkBleedConfig.DEFAULT
+    var inkBleedConfig by remember {
+        mutableStateOf(InkBleedConfig.fromJsonString(prefs.getString("ink_bleed_config_json", null)))
+    }
 
     val backupFolderDisplayName = remember(backupFolderUriString) {
         backupFolderUriString?.let { uriStr ->
@@ -1537,6 +1539,13 @@ fun BigNotesMainScreen(
                 hoverCursorOrientation = orientation
                 prefs.edit().putString("hover_cursor_orientation", orientation.name).apply()
             },
+            inkBleedConfig = inkBleedConfig,
+            onInkBleedConfigChange = { newConfig ->
+                val clamped = newConfig.clamped()
+                inkBleedConfig = clamped
+                canvasView?.inkBleedConfig = clamped
+                prefs.edit().putString("ink_bleed_config_json", clamped.toJsonString()).apply()
+            },
             modelDownloadStatus = modelDownloadStatus,
             onDownloadModel = { handwritingSearchManager.downloadModel() },
             initialCategory = activeSettingsCategory,
@@ -1629,7 +1638,8 @@ fun BigNotesMainScreen(
                             strokes = targetStrokes,
                             options = exportOptions,
                             images = targetImages,
-                            textBlocks = targetTextBlocks
+                            textBlocks = targetTextBlocks,
+                            inkBleedConfig = inkBleedConfig
                         )
                         isExporting = false
                         showExportDialog = false

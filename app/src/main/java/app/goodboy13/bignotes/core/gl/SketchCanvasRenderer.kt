@@ -134,12 +134,14 @@ class SketchCanvasRenderer(
     @Volatile
     var inkBleedConfig: app.goodboy13.bignotes.core.model.InkBleedConfig = app.goodboy13.bignotes.core.model.InkBleedConfig.DEFAULT
         set(value) {
-            val marginChanged = field.quadMarginRatio != value.quadMarginRatio
-            field = value
-            StrokeTessellator.activeInkConfig = value
+            val clamped = value.clamped()
+            val marginChanged = field.quadMarginRatio != clamped.quadMarginRatio
+            field = clamped
+            StrokeTessellator.activeInkConfig = clamped
             applyInkShaderParams()
             if (marginChanged) {
                 meshCache.clear()
+                penStore.markAllDirty()
             }
             isFboDirty = true
         }
@@ -871,6 +873,7 @@ class SketchCanvasRenderer(
 
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        applyInkShaderParams()
         shader.invertColors = isDarkMode
         shader.use(fboMvpMatrix, noiseTextureId)
 

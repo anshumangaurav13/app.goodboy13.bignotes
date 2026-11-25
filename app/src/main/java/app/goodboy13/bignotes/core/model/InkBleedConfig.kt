@@ -1,5 +1,6 @@
 package app.goodboy13.bignotes.core.model
 
+import org.json.JSONObject
 import kotlin.math.roundToInt
 
 /**
@@ -19,9 +20,39 @@ data class InkBleedConfig(
     val inkDilution: Float = 0.20f,       // Single-dab pigment dilution
     val fiberFeathering: Float = 0.46f,   // Capillary feathering into cellulose paper fibers
     val meniscusRim: Float = 0.20f,       // Surface tension / coffee-ring perimeter darkening
-    val wetSheen: Float = 0.48f,          // Liquid wet specular sheen along centerline
+    val wetSheen: Float = 0.48f,          // Reserved for specular sheen (inactive in subtractive ink shader)
     val chromaHalo: Float = 0.22f         // Chromatographic dye separation halo at fringe
 ) {
+    fun clamped(): InkBleedConfig = copy(
+        bleedRatio = bleedRatio.coerceIn(0.0f, 1.50f),
+        bleedPower = bleedPower.coerceIn(0.50f, 4.50f),
+        coreShiftRatio = coreShiftRatio.coerceIn(-0.50f, 0.50f),
+        bleedBaseOpacity = bleedBaseOpacity.coerceIn(0.0f, 1.0f),
+        aaWidth = aaWidth.coerceIn(0.10f, 2.50f),
+        paperGrainMix = paperGrainMix.coerceIn(0.0f, 1.0f),
+        quadMarginRatio = quadMarginRatio.coerceIn(0.20f, 1.60f),
+        inkDilution = inkDilution.coerceIn(0.02f, 1.0f),
+        fiberFeathering = fiberFeathering.coerceIn(0.0f, 1.0f),
+        meniscusRim = meniscusRim.coerceIn(0.0f, 1.0f),
+        wetSheen = wetSheen.coerceIn(0.0f, 1.0f),
+        chromaHalo = chromaHalo.coerceIn(0.0f, 1.0f)
+    )
+
+    fun toJsonString(): String = JSONObject().apply {
+        put("bleedRatio", bleedRatio.toDouble())
+        put("bleedPower", bleedPower.toDouble())
+        put("coreShiftRatio", coreShiftRatio.toDouble())
+        put("bleedBaseOpacity", bleedBaseOpacity.toDouble())
+        put("aaWidth", aaWidth.toDouble())
+        put("paperGrainMix", paperGrainMix.toDouble())
+        put("quadMarginRatio", quadMarginRatio.toDouble())
+        put("inkDilution", inkDilution.toDouble())
+        put("fiberFeathering", fiberFeathering.toDouble())
+        put("meniscusRim", meniscusRim.toDouble())
+        put("wetSheen", wetSheen.toDouble())
+        put("chromaHalo", chromaHalo.toDouble())
+    }.toString()
+
     fun toParamString(): String {
         val bleedPct = (bleedRatio * 100f).roundToInt()
         val shiftPct = (coreShiftRatio * 100f).roundToInt()
@@ -107,5 +138,37 @@ data class InkBleedConfig(
             wetSheen = 0.20f,
             chromaHalo = 0.50f
         )
+
+        val PRESETS: List<Pair<String, InkBleedConfig>> = listOf(
+            "Default" to DEFAULT,
+            "Crisp AA" to CRISP_AA,
+            "Natural" to NATURAL_PEN,
+            "Velvet" to VELVET_BLEED,
+            "Heavy" to HEAVY_INK,
+            "Wash" to WATERCOLOR_WASH
+        )
+
+        fun fromJsonString(raw: String?): InkBleedConfig {
+            if (raw.isNullOrBlank()) return DEFAULT
+            return try {
+                val obj = JSONObject(raw)
+                InkBleedConfig(
+                    bleedRatio = obj.optDouble("bleedRatio", DEFAULT.bleedRatio.toDouble()).toFloat(),
+                    bleedPower = obj.optDouble("bleedPower", DEFAULT.bleedPower.toDouble()).toFloat(),
+                    coreShiftRatio = obj.optDouble("coreShiftRatio", DEFAULT.coreShiftRatio.toDouble()).toFloat(),
+                    bleedBaseOpacity = obj.optDouble("bleedBaseOpacity", DEFAULT.bleedBaseOpacity.toDouble()).toFloat(),
+                    aaWidth = obj.optDouble("aaWidth", DEFAULT.aaWidth.toDouble()).toFloat(),
+                    paperGrainMix = obj.optDouble("paperGrainMix", DEFAULT.paperGrainMix.toDouble()).toFloat(),
+                    quadMarginRatio = obj.optDouble("quadMarginRatio", DEFAULT.quadMarginRatio.toDouble()).toFloat(),
+                    inkDilution = obj.optDouble("inkDilution", DEFAULT.inkDilution.toDouble()).toFloat(),
+                    fiberFeathering = obj.optDouble("fiberFeathering", DEFAULT.fiberFeathering.toDouble()).toFloat(),
+                    meniscusRim = obj.optDouble("meniscusRim", DEFAULT.meniscusRim.toDouble()).toFloat(),
+                    wetSheen = obj.optDouble("wetSheen", DEFAULT.wetSheen.toDouble()).toFloat(),
+                    chromaHalo = obj.optDouble("chromaHalo", DEFAULT.chromaHalo.toDouble()).toFloat()
+                ).clamped()
+            } catch (_: Exception) {
+                DEFAULT
+            }
+        }
     }
 }
