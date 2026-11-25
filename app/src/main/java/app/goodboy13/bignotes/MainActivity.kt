@@ -83,9 +83,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
 import app.goodboy13.bignotes.ui.theme.BigNotesTheme
 import app.goodboy13.bignotes.ui.theme.InkPalette
 import app.goodboy13.bignotes.ui.theme.ThemeConfig
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 import app.goodboy13.bignotes.ui.toolbar.DockEdge
 import app.goodboy13.bignotes.ui.toolbar.FloatingNoteHeader
 import app.goodboy13.bignotes.ui.toolbar.FloatingNoteToolbar
@@ -878,12 +880,13 @@ fun BigNotesMainScreen(
     }
 
     val density = LocalDensity.current
+    val reducedMotion = rememberReducedMotion()
     val sidebarWidthDp = SidebarLayoutDefaults.totalWidth(configuration.screenWidthDp, isPortrait, isFoldersVisible)
     val sidebarWidthPx = with(density) { sidebarWidthDp.toPx() }
 
     val animatedSidebarWidthPx by animateFloatAsState(
         targetValue = if (isSidebarVisible) sidebarWidthPx else 0f,
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        animationSpec = BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion),
         label = "sidebarWidth"
     )
     val animatedSidebarWidthDp = with(density) { animatedSidebarWidthPx.toDp() }
@@ -895,7 +898,7 @@ fun BigNotesMainScreen(
     }
     val animatedStatusBarDp by animateDpAsState(
         targetValue = if (isSidebarVisible) lastKnownStatusBarHeightDp else 0.dp,
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        animationSpec = BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion),
         label = "statusBarHeight"
     )
 

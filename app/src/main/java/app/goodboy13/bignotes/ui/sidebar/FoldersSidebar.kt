@@ -23,12 +23,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import app.goodboy13.bignotes.ui.components.InPlaceRenameField
@@ -155,7 +158,8 @@ fun FoldersSidebar(
                     SwipeToRevealItem(
                         onDelete = { onFolderDelete(folder.id) },
                         revealWidthDp = 48,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.animateItem()
                     ) {
                         FolderRowItem(
                             folder = folder,
@@ -238,26 +242,29 @@ private fun FolderRowItem(
     onCommitRename: (String) -> Unit,
     onCancelRename: () -> Unit
 ) {
+    val reducedMotion = rememberReducedMotion()
     val shape = RoundedCornerShape(12.dp)
-    val highlightBorder = if (isSelected) {
-        Modifier.border(
-            width = 1.5.dp,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-            shape = shape
-        )
-    } else {
-        Modifier.border(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
-            shape = shape
-        )
-    }
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+        else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+        animationSpec = BigNotesMotion.snappyTween(160, reducedMotion),
+        label = "folderRowBorder"
+    )
+    val highlightBorder = Modifier.border(
+        width = if (isSelected) 1.5.dp else 1.dp,
+        color = borderColor,
+        shape = shape
+    )
 
-    val backgroundColor = if (isSelected) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-    } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)
-    }
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+        } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)
+        },
+        animationSpec = BigNotesMotion.snappyTween(160, reducedMotion),
+        label = "folderRowBg"
+    )
 
     val clickModifier = if (!isEditing) {
         Modifier.combinedClickable(

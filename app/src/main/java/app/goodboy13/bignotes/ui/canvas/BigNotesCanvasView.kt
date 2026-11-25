@@ -2,6 +2,11 @@ package app.goodboy13.bignotes.ui.canvas
 
 import android.graphics.PointF
 import android.graphics.RectF
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
@@ -21,7 +26,9 @@ import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.*
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
 import app.goodboy13.bignotes.ui.theme.CustomIcons
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import app.goodboy13.bignotes.core.math.model.MathOverlayState
@@ -338,10 +345,15 @@ fun BigNotesCanvasView(
             }
         }
 
+        val reducedMotion = rememberReducedMotion()
+
         // 3. Lasso Selection Marquee & Floating Action Pill
         val bounds = selectionBounds
         val view = canvasViewRef
-        if (bounds != null && selectedStrokes.isNotEmpty() && view != null) {
+        val isLassoVisible = bounds != null && selectedStrokes.isNotEmpty() && view != null
+        var lastPillOffset by remember { mutableStateOf(Pair(0.dp, 0.dp)) }
+
+        if (isLassoVisible) {
             @Suppress("UNUSED_VARIABLE")
             val tick = viewportTick
             val (sLeft, sTop) = view.worldToScreen(bounds.left + selectionDragDx, bounds.top + selectionDragDy)
@@ -410,16 +422,24 @@ fun BigNotesCanvasView(
             val maxXDp = (screenConfig.screenWidthDp - 170).dp
             val clampedXDp = pillXDp.coerceIn(minXDp, maxOf(minXDp, maxXDp))
             val clampedYDp = pillYDp.coerceAtLeast(8.dp)
+            lastPillOffset = Pair(clampedXDp, clampedYDp)
+        }
 
+        AnimatedVisibility(
+            visible = isLassoVisible,
+            enter = fadeIn(BigNotesMotion.enterTween(160, reducedMotion)) +
+                scaleIn(initialScale = 0.90f, animationSpec = BigNotesMotion.enterTween(180, reducedMotion)),
+            exit = fadeOut(BigNotesMotion.exitTween(120, reducedMotion)) +
+                scaleOut(targetScale = 0.94f, animationSpec = BigNotesMotion.exitTween(120, reducedMotion)),
+            modifier = Modifier.offset(x = lastPillOffset.first, y = lastPillOffset.second)
+        ) {
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
                 tonalElevation = 6.dp,
                 shadowElevation = 4.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
-                modifier = Modifier
-                    .offset(x = clampedXDp, y = clampedYDp)
-                    .height(pillHeightDp)
+                modifier = Modifier.height(36.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -453,7 +473,7 @@ fun BigNotesCanvasView(
                     }
 
                     IconButton(
-                        onClick = { view.duplicateSelection() },
+                        onClick = { view?.duplicateSelection() },
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
@@ -465,7 +485,7 @@ fun BigNotesCanvasView(
                     }
 
                     IconButton(
-                        onClick = { view.deleteSelection() },
+                        onClick = { view?.deleteSelection() },
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
@@ -477,7 +497,7 @@ fun BigNotesCanvasView(
                     }
 
                     IconButton(
-                        onClick = { view.clearSelection() },
+                        onClick = { view?.clearSelection() },
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
@@ -536,7 +556,11 @@ fun BigNotesCanvasView(
         // 3.8. Active Search Hit Visual Highlight Box
         val searchView = canvasViewRef
         val hit = activeSearchHit
-        if (searchView != null && hit != null && isCanvasEnabled) {
+        val isSearchHitVisible = searchView != null && hit != null && isCanvasEnabled
+        var lastSearchBadgeOffset by remember { mutableStateOf(Pair(8.dp, 8.dp)) }
+        var lastSearchText by remember { mutableStateOf("") }
+
+        if (isSearchHitVisible) {
             @Suppress("UNUSED_VARIABLE")
             val tick = viewportTick
             val (screenMinX, screenMinY) = searchView.worldToScreen(hit.minX, hit.minY)
@@ -571,13 +595,23 @@ fun BigNotesCanvasView(
             val density = LocalDensity.current
             val badgeXDp = with(density) { left.coerceAtLeast(8f).toDp() }
             val badgeYDp = with(density) { (top - 36f).coerceAtLeast(viewOffsetY + 8f).toDp() }
+            lastSearchBadgeOffset = Pair(badgeXDp, badgeYDp)
+            lastSearchText = hit.matchedText
+        }
 
+        AnimatedVisibility(
+            visible = isSearchHitVisible,
+            enter = fadeIn(BigNotesMotion.enterTween(170, reducedMotion)) +
+                scaleIn(initialScale = 0.90f, animationSpec = BigNotesMotion.enterTween(190, reducedMotion)),
+            exit = fadeOut(BigNotesMotion.exitTween(120, reducedMotion)) +
+                scaleOut(targetScale = 0.94f, animationSpec = BigNotesMotion.exitTween(120, reducedMotion)),
+            modifier = Modifier.offset(x = lastSearchBadgeOffset.first, y = lastSearchBadgeOffset.second)
+        ) {
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 border = BorderStroke(1.dp, Color(0xFFF57C00).copy(alpha = 0.6f)),
-                shadowElevation = 6.dp,
-                modifier = Modifier.offset(x = badgeXDp, y = badgeYDp)
+                shadowElevation = 6.dp
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -591,7 +625,7 @@ fun BigNotesCanvasView(
                     )
                     Spacer(modifier = Modifier.width(5.dp))
                     Text(
-                        text = hit.matchedText,
+                        text = lastSearchText,
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 11.sp
@@ -641,7 +675,12 @@ fun BigNotesCanvasView(
         }
 
         // 5. Disabled Canvas Empty State / Call-to-Action Placeholder
-        if (!isCanvasEnabled) {
+        AnimatedVisibility(
+            visible = !isCanvasEnabled,
+            enter = fadeIn(BigNotesMotion.enterTween(200, reducedMotion)) +
+                scaleIn(initialScale = 0.94f, animationSpec = BigNotesMotion.enterTween(220, reducedMotion)),
+            exit = fadeOut(BigNotesMotion.exitTween(140, reducedMotion))
+        ) {
             val contentPaddingStart = with(LocalDensity.current) { viewOffsetX.toDp() }
             val contentPaddingTop = with(LocalDensity.current) { viewOffsetY.toDp() }
 

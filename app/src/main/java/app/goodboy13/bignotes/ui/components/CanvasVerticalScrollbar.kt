@@ -7,6 +7,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -171,10 +175,13 @@ fun CanvasVerticalScrollbar(
         )
 
         // Floating Page Number Badge (shown while actively scrubbing)
+        val reducedMotion = rememberReducedMotion()
         AnimatedVisibility(
             visible = isScrubbing,
-            enter = fadeIn(animationSpec = tween(120)),
-            exit = fadeOut(animationSpec = tween(150)),
+            enter = fadeIn(animationSpec = BigNotesMotion.enterTween(120, reducedMotion)) +
+                scaleIn(initialScale = 0.86f, animationSpec = BigNotesMotion.enterTween(140, reducedMotion)),
+            exit = fadeOut(animationSpec = BigNotesMotion.exitTween(150, reducedMotion)) +
+                scaleOut(targetScale = 0.90f, animationSpec = BigNotesMotion.exitTween(150, reducedMotion)),
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(end = 22.dp)

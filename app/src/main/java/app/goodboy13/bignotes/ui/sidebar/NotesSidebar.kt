@@ -24,12 +24,15 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.FolderOff
@@ -470,7 +473,8 @@ fun NotesSidebar(
                         onDelete = { onNoteDelete(note.id) },
                         onActionRight = if (onNoteExportPdf != null) { { onNoteExportPdf(note) } } else null,
                         revealWidthDp = 48,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.animateItem()
                     ) {
                         NoteRowItem(
                             note = note,
@@ -572,26 +576,29 @@ private fun NoteRowItem(
     onCommitRename: (String) -> Unit,
     onCancelRename: () -> Unit
 ) {
+    val reducedMotion = rememberReducedMotion()
     val shape = RoundedCornerShape(12.dp)
-    val highlightBorder = if (isSelected) {
-        Modifier.border(
-            width = 1.5.dp,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-            shape = shape
-        )
-    } else {
-        Modifier.border(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
-            shape = shape
-        )
-    }
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+        else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+        animationSpec = BigNotesMotion.snappyTween(160, reducedMotion),
+        label = "noteRowBorder"
+    )
+    val highlightBorder = Modifier.border(
+        width = if (isSelected) 1.5.dp else 1.dp,
+        color = borderColor,
+        shape = shape
+    )
 
-    val backgroundColor = if (isSelected) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-    }
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        },
+        animationSpec = BigNotesMotion.snappyTween(160, reducedMotion),
+        label = "noteRowBg"
+    )
 
     val clickModifier = if (!isEditing) {
         Modifier.combinedClickable(

@@ -2,7 +2,6 @@ package app.goodboy13.bignotes.ui.sidebar
 
 import android.content.res.Configuration
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -16,6 +15,8 @@ import androidx.compose.ui.unit.dp
 import app.goodboy13.bignotes.ui.model.FolderItem
 import app.goodboy13.bignotes.ui.model.NoteItem
 import app.goodboy13.bignotes.ui.model.NoteSortOrder
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 
 object SidebarLayoutDefaults {
     fun folderWidth(screenWidthDp: Int, isPortrait: Boolean): Dp = when {
@@ -73,12 +74,16 @@ fun DualSidebarContainer(
     val folderWidth = SidebarLayoutDefaults.folderWidth(screenWidth, isPortrait)
     val totalWidth = SidebarLayoutDefaults.totalWidth(screenWidth, isPortrait, isFoldersVisible)
 
+    val reducedMotion = rememberReducedMotion()
     val containerShape = RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp)
 
     Surface(
         modifier = modifier
             .fillMaxHeight()
-            .width(totalWidth),
+            .width(totalWidth)
+            .animateContentSize(
+                animationSpec = BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion)
+            ),
         shape = containerShape,
         shadowElevation = 8.dp,
         tonalElevation = 2.dp,
@@ -88,30 +93,38 @@ fun DualSidebarContainer(
         Row(
             modifier = Modifier.fillMaxSize()
         ) {
-            if (isFoldersVisible) {
-                // Folders Column
-                FoldersSidebar(
-                    folders = folders,
-                    selectedFolderId = selectedFolderId,
-                    onFolderSelect = onFolderSelect,
-                    onFolderDelete = onFolderDelete,
-                    onFolderRename = onFolderRename,
-                    onAddFolder = onAddFolder,
-                    onToggleCollapse = onToggleFoldersVisible,
-                    onOpenSettings = onOpenSettings,
-                    isDarkMode = isDarkMode,
-                    onToggleDarkMode = onToggleDarkMode,
-                    statusBarHeight = statusBarHeight,
-                    modifier = Modifier
-                        .width(folderWidth)
-                        .fillMaxHeight()
-                )
+            AnimatedVisibility(
+                visible = isFoldersVisible,
+                enter = expandHorizontally(BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion)) +
+                    fadeIn(BigNotesMotion.enterTween(180, reducedMotion)),
+                exit = shrinkHorizontally(BigNotesMotion.exitTween(180, reducedMotion)) +
+                    fadeOut(BigNotesMotion.exitTween(140, reducedMotion))
+            ) {
+                Row(modifier = Modifier.fillMaxHeight()) {
+                    // Folders Column
+                    FoldersSidebar(
+                        folders = folders,
+                        selectedFolderId = selectedFolderId,
+                        onFolderSelect = onFolderSelect,
+                        onFolderDelete = onFolderDelete,
+                        onFolderRename = onFolderRename,
+                        onAddFolder = onAddFolder,
+                        onToggleCollapse = onToggleFoldersVisible,
+                        onOpenSettings = onOpenSettings,
+                        isDarkMode = isDarkMode,
+                        onToggleDarkMode = onToggleDarkMode,
+                        statusBarHeight = statusBarHeight,
+                        modifier = Modifier
+                            .width(folderWidth)
+                            .fillMaxHeight()
+                    )
 
-                // Vertical divider between Folders and Notes
-                VerticalDivider(
-                    thickness = 0.5.dp,
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
-                )
+                    // Vertical divider between Folders and Notes
+                    VerticalDivider(
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
+                    )
+                }
             }
 
             // Notes Column

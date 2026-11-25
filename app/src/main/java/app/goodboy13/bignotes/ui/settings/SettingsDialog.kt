@@ -1,9 +1,17 @@
 package app.goodboy13.bignotes.ui.settings
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -148,6 +156,7 @@ fun SettingsDialog(
     onDismiss: () -> Unit
 ) {
     var currentCategory by remember(initialCategory) { mutableStateOf<SettingsCategory?>(initialCategory) }
+    val reducedMotion = rememberReducedMotion()
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -165,44 +174,60 @@ fun SettingsDialog(
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
-                // Header (iOS Style Navigation)
+                // Header (Directional iOS-style Navigation)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    if (currentCategory == null) {
-                        Text(
-                            text = "Settings",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 19.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    } else {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .clickable { currentCategory = null }
-                                .padding(vertical = 2.dp, horizontal = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
+                    AnimatedContent(
+                        targetState = currentCategory,
+                        transitionSpec = {
+                            if (reducedMotion) {
+                                fadeIn(BigNotesMotion.snappyTween(1, true)) togetherWith fadeOut(BigNotesMotion.snappyTween(1, true))
+                            } else {
+                                (fadeIn(BigNotesMotion.enterTween(180)) + slideInHorizontally(BigNotesMotion.enterTween(220)) { if (targetState != null) it / 6 else -it / 6 })
+                                    .togetherWith(fadeOut(BigNotesMotion.exitTween(140)) + slideOutHorizontally(BigNotesMotion.exitTween(180)) { if (targetState != null) -it / 6 else it / 6 })
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        label = "SettingsHeaderTransition"
+                    ) { headerCat ->
+                        if (headerCat == null) {
                             Text(
                                 text = "Settings",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 19.sp
                                 ),
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.onSurface
                             )
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { currentCategory = null }
+                                    .padding(vertical = 2.dp, horizontal = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = headerCat.title,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
 
@@ -219,24 +244,22 @@ fun SettingsDialog(
                     }
                 }
 
-                if (currentCategory != null) {
-                    Text(
-                        text = currentCategory!!.title,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 4.dp)
-                    )
-                }
+                Spacer(modifier = Modifier.height(10.dp))
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Body (Animated between Category List and Detail Page)
+                // Body (Directional push/pop transition between Category List and Detail Page)
                 AnimatedContent(
                     targetState = currentCategory,
-                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    transitionSpec = {
+                        if (reducedMotion) {
+                            fadeIn(BigNotesMotion.snappyTween(1, true)) togetherWith fadeOut(BigNotesMotion.snappyTween(1, true))
+                        } else if (targetState != null) {
+                            (slideInHorizontally(BigNotesMotion.enterTween(240)) { it / 4 } + fadeIn(BigNotesMotion.enterTween(200)))
+                                .togetherWith(slideOutHorizontally(BigNotesMotion.exitTween(180)) { -it / 6 } + fadeOut(BigNotesMotion.exitTween(140)))
+                        } else {
+                            (slideInHorizontally(BigNotesMotion.enterTween(240)) { -it / 4 } + fadeIn(BigNotesMotion.enterTween(200)))
+                                .togetherWith(slideOutHorizontally(BigNotesMotion.exitTween(180)) { it / 6 } + fadeOut(BigNotesMotion.exitTween(140)))
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
@@ -433,6 +456,23 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
+private fun ExpandableSettingsSection(
+    visible: Boolean,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val reducedMotion = rememberReducedMotion()
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically(BigNotesMotion.enterTween(210, reducedMotion)) +
+            fadeIn(BigNotesMotion.enterTween(180, reducedMotion)),
+        exit = shrinkVertically(BigNotesMotion.exitTween(170, reducedMotion)) +
+            fadeOut(BigNotesMotion.exitTween(130, reducedMotion))
+    ) {
+        Column(modifier = Modifier.fillMaxWidth(), content = content)
+    }
+}
+
+@Composable
 private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -536,7 +576,7 @@ private fun PenStylusDetail(
             )
         }
 
-        if (strokeStabilizationEnabled) {
+        ExpandableSettingsSection(visible = strokeStabilizationEnabled) {
             Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -591,7 +631,7 @@ private fun PenStylusDetail(
             )
         }
 
-        if (shapeSnappingEnabled) {
+        ExpandableSettingsSection(visible = shapeSnappingEnabled) {
             Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -634,7 +674,7 @@ private fun PenStylusDetail(
             )
         }
 
-        if (holdToEraseEnabled) {
+        ExpandableSettingsSection(visible = holdToEraseEnabled) {
             Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -677,7 +717,7 @@ private fun PenStylusDetail(
             )
         }
 
-        if (hoverCursorEnabled) {
+        ExpandableSettingsSection(visible = hoverCursorEnabled) {
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "Diagonal Orientation",
@@ -939,7 +979,7 @@ private fun CanvasGridDetail(
             )
         }
 
-        if (gridConfig.enabled) {
+        ExpandableSettingsSection(visible = gridConfig.enabled) {
             Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),

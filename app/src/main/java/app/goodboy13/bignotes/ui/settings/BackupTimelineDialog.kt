@@ -2,6 +2,12 @@ package app.goodboy13.bignotes.ui.settings
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,6 +35,8 @@ import app.goodboy13.bignotes.core.storage.BackupManager
 import app.goodboy13.bignotes.core.storage.SnapshotManifest
 import app.goodboy13.bignotes.core.storage.SnapshotNoteEntry
 import app.goodboy13.bignotes.core.storage.TimelineSnapshotSummary
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -293,7 +301,27 @@ fun BackupTimelineDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                if (selectedSnapshotId == null) {
+                val reducedMotion = rememberReducedMotion()
+                AnimatedContent(
+                    targetState = selectedSnapshotId,
+                    transitionSpec = {
+                        if (reducedMotion) {
+                            fadeIn(BigNotesMotion.snappyTween(1, true)) togetherWith fadeOut(BigNotesMotion.snappyTween(1, true))
+                        } else if (targetState != null) {
+                            (slideInHorizontally(BigNotesMotion.enterTween(230)) { it / 4 } + fadeIn(BigNotesMotion.enterTween(190)))
+                                .togetherWith(slideOutHorizontally(BigNotesMotion.exitTween(170)) { -it / 6 } + fadeOut(BigNotesMotion.exitTween(130)))
+                        } else {
+                            (slideInHorizontally(BigNotesMotion.enterTween(230)) { -it / 4 } + fadeIn(BigNotesMotion.enterTween(190)))
+                                .togetherWith(slideOutHorizontally(BigNotesMotion.exitTween(170)) { it / 6 } + fadeOut(BigNotesMotion.exitTween(130)))
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    label = "BackupTimelineNav"
+                ) { targetSnapshotId ->
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (targetSnapshotId == null) {
                     // Timeline List View
                     if (isLoadingTimeline) {
                         Box(
@@ -346,11 +374,13 @@ fun BackupTimelineDialog(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(timelineSnapshots, key = { it.id }) { summary ->
-                                TimelineCard(
-                                    summary = summary,
-                                    onClick = { loadSnapshotDetail(summary.id) },
-                                    onDelete = { snapshotToDelete = summary }
-                                )
+                                Box(modifier = Modifier.animateItem()) {
+                                    TimelineCard(
+                                        summary = summary,
+                                        onClick = { loadSnapshotDetail(summary.id) },
+                                        onDelete = { snapshotToDelete = summary }
+                                    )
+                                }
                             }
                         }
                     }
@@ -472,6 +502,8 @@ fun BackupTimelineDialog(
                                     }
                                 }
                             }
+                        }
+                    }
                         }
                     }
                 }

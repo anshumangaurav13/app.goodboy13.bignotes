@@ -1,14 +1,19 @@
 package app.goodboy13.bignotes.ui.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -63,6 +68,7 @@ fun SwipeToRevealItem(
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
+    val reducedMotion = rememberReducedMotion()
     val revealWidthPx = with(density) { revealWidthDp.dp.toPx() }
     val offsetX = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
@@ -84,9 +90,10 @@ fun SwipeToRevealItem(
                 coroutineScope.launch {
                     offsetX.animateTo(
                         targetValue = 0f,
-                        animationSpec = spring(
+                        animationSpec = BigNotesMotion.tactileSpring(
                             dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMedium
+                            stiffness = Spring.StiffnessMedium,
+                            reducedMotion = reducedMotion
                         )
                     )
                     revealState = SwipeRevealState.Closed
@@ -95,16 +102,31 @@ fun SwipeToRevealItem(
         }
     }
 
-    // Pulsing blink animation for confirmation state (flashing at ~240ms cycle)
-    val infiniteTransition = rememberInfiniteTransition(label = "deleteBlink")
-    val blinkAlpha by infiniteTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = 0.20f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 240, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
+    // Calm slow-in/slow-out breathing pulse for delete confirmation (respects reduced motion)
+    val pulseAlpha = if (isConfirmingDelete && !reducedMotion) {
+        val infiniteTransition = rememberInfiniteTransition(label = "deletePulse")
+        val animated by infiniteTransition.animateFloat(
+            initialValue = 1.0f,
+            targetValue = 0.76f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = BigNotesMotion.CALM_PULSE_MS, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "pulseAlpha"
+        )
+        animated
+    } else {
+        1.0f
+    }
+
+    val confirmIconScale by animateFloatAsState(
+        targetValue = if (isConfirmingDelete) 1.14f else 1.0f,
+        animationSpec = BigNotesMotion.tactileSpring(
+            dampingRatio = 0.55f,
+            stiffness = Spring.StiffnessMedium,
+            reducedMotion = reducedMotion
         ),
-        label = "blinkAlpha"
+        label = "confirmIconScale"
     )
 
     Box(
@@ -114,20 +136,23 @@ fun SwipeToRevealItem(
     ) {
         // Red Delete button behind (revealed by swiping left)
         if (isDeleteRevealed) {
-            val bgAlpha = if (isConfirmingDelete) blinkAlpha else 1.0f
+            val bgAlpha = if (isConfirmingDelete) pulseAlpha else 1.0f
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .background(Color(0xFFE53935).copy(alpha = bgAlpha))
                     .clickable {
                         if (revealState !is SwipeRevealState.ConfirmingDelete) {
-                            // First tap: start blinking for 3 seconds to await confirmation
+                            // First tap: start calm breathing pulse for 3 seconds to await confirmation
                             revealState = SwipeRevealState.ConfirmingDelete(System.currentTimeMillis() + 3000L)
                         } else {
-                            // Second tap within 3 seconds: confirm delete!
+                            // Second tap within 3 seconds: animate closed cleanly then delete
                             revealState = SwipeRevealState.Closed
                             coroutineScope.launch {
-                                offsetX.snapTo(0f)
+                                offsetX.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = BigNotesMotion.exitTween(reducedMotion = reducedMotion)
+                                )
                                 onDelete()
                             }
                         }
@@ -146,7 +171,10 @@ fun SwipeToRevealItem(
                         tint = Color.White,
                         modifier = Modifier
                             .size(22.dp)
-                            .then(if (isConfirmingDelete) Modifier.alpha(blinkAlpha) else Modifier)
+                            .graphicsLayer {
+                                scaleX = confirmIconScale
+                                scaleY = confirmIconScale
+                            }
                     )
                 }
             }

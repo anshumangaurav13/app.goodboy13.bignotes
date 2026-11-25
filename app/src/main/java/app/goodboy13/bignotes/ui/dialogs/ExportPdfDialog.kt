@@ -1,5 +1,10 @@
 package app.goodboy13.bignotes.ui.dialogs
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,6 +29,8 @@ import app.goodboy13.bignotes.core.export.PageFormat
 import app.goodboy13.bignotes.core.export.PdfMargin
 import app.goodboy13.bignotes.core.export.PdfExportOptions
 import app.goodboy13.bignotes.core.export.PdfRenderMode
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 
 enum class ExportFormat(val displayName: String) {
     PDF("PDF Document"),
@@ -98,6 +105,7 @@ fun ExportPdfDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Format Selector (PDF vs Markdown)
+                val reducedMotion = rememberReducedMotion()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -107,9 +115,19 @@ fun ExportPdfDialog(
                 ) {
                     listOf(ExportFormat.PDF, ExportFormat.MARKDOWN).forEach { fmt ->
                         val isSelected = selectedExportFormat == fmt
+                        val pillBg by animateColorAsState(
+                            targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            animationSpec = BigNotesMotion.snappyTween(160, reducedMotion),
+                            label = "exportFmtBg"
+                        )
+                        val pillFg by animateColorAsState(
+                            targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                            animationSpec = BigNotesMotion.snappyTween(160, reducedMotion),
+                            label = "exportFmtFg"
+                        )
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            color = pillBg,
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable { selectedExportFormat = fmt }
@@ -120,7 +138,7 @@ fun ExportPdfDialog(
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                     fontSize = 12.sp
                                 ),
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                color = pillFg,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.padding(vertical = 6.dp)
                             )
@@ -132,7 +150,16 @@ fun ExportPdfDialog(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(10.dp))
 
-                if (selectedExportFormat == ExportFormat.PDF) {
+                AnimatedContent(
+                    targetState = selectedExportFormat,
+                    transitionSpec = {
+                        (fadeIn(BigNotesMotion.enterTween(180, reducedMotion)))
+                            .togetherWith(fadeOut(BigNotesMotion.exitTween(130, reducedMotion)))
+                    },
+                    label = "ExportFormatContent"
+                ) { targetFormat ->
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        if (targetFormat == ExportFormat.PDF) {
                     // Page Format Selection
                     Text(
                         text = "Page Size",
@@ -196,9 +223,19 @@ fun ExportPdfDialog(
                     ) {
                         for (m in PdfMargin.values()) {
                             val isSelected = selectedMargin == m
+                            val marginBg by animateColorAsState(
+                                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                animationSpec = BigNotesMotion.snappyTween(150, reducedMotion),
+                                label = "marginBg"
+                            )
+                            val marginFg by animateColorAsState(
+                                targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                animationSpec = BigNotesMotion.snappyTween(150, reducedMotion),
+                                label = "marginFg"
+                            )
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                color = marginBg,
                                 modifier = Modifier
                                     .weight(1f)
                                     .clickable {
@@ -212,7 +249,7 @@ fun ExportPdfDialog(
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                         fontSize = 11.5.sp
                                     ),
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                    color = marginFg,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.padding(vertical = 6.dp)
                                 )
@@ -378,6 +415,8 @@ fun ExportPdfDialog(
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )
                         }
+                    }
+                }
                     }
                 }
 

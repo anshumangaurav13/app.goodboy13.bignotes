@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -35,8 +38,11 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.goodboy13.bignotes.core.model.ActiveTool
+import app.goodboy13.bignotes.ui.theme.BigNotesMotion
 import app.goodboy13.bignotes.ui.theme.CustomIcons
 import app.goodboy13.bignotes.ui.theme.InkColorItem
+import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
+import app.goodboy13.bignotes.ui.theme.tactileScale
 import kotlin.math.roundToInt
 
 enum class DockEdge {
@@ -82,6 +88,7 @@ fun FloatingNoteToolbar(
 ) {
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
+    val reducedMotion = rememberReducedMotion()
 
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
@@ -120,41 +127,38 @@ fun FloatingNoteToolbar(
 
     var lastEraserMode by remember { mutableStateOf(ActiveTool.PRECISION_ERASER) }
 
-    // Compute target snapped position
+    // Compute target snapped position (defensive range clamping prevents empty-range crashes when sidebar opens)
     val snappedTargetOffset = remember(
         dockEdge, posFraction, toolbarSizePx, screenWidthPx, screenHeightPx, sidebarOffsetPx, statusBarHeightPx
     ) {
         val tw = toolbarSizePx.width.toFloat()
         val th = toolbarSizePx.height.toFloat()
+        val edgePad = with(density) { 8.dp.toPx() }
 
         when (dockEdge) {
             DockEdge.TOP -> {
-                val clampedX = ((screenWidthPx - tw) * posFraction).coerceIn(
-                    sidebarOffsetPx + with(density) { 8.dp.toPx() },
-                    screenWidthPx - tw - with(density) { 8.dp.toPx() }
-                )
+                val minX = sidebarOffsetPx + edgePad
+                val maxX = maxOf(minX, screenWidthPx - tw - edgePad)
+                val clampedX = ((screenWidthPx - tw) * posFraction).coerceIn(minX, maxX)
                 Offset(clampedX, statusBarHeightPx + with(density) { 10.dp.toPx() })
             }
             DockEdge.BOTTOM -> {
-                val clampedX = ((screenWidthPx - tw) * posFraction).coerceIn(
-                    sidebarOffsetPx + with(density) { 8.dp.toPx() },
-                    screenWidthPx - tw - with(density) { 8.dp.toPx() }
-                )
-                Offset(clampedX, screenHeightPx - th - with(density) { 18.dp.toPx() })
+                val minX = sidebarOffsetPx + edgePad
+                val maxX = maxOf(minX, screenWidthPx - tw - edgePad)
+                val clampedX = ((screenWidthPx - tw) * posFraction).coerceIn(minX, maxX)
+                Offset(clampedX, maxOf(edgePad, screenHeightPx - th - with(density) { 18.dp.toPx() }))
             }
             DockEdge.LEFT -> {
-                val clampedY = ((screenHeightPx - th) * posFraction).coerceIn(
-                    statusBarHeightPx + with(density) { 8.dp.toPx() },
-                    screenHeightPx - th - with(density) { 8.dp.toPx() }
-                )
+                val minY = statusBarHeightPx + edgePad
+                val maxY = maxOf(minY, screenHeightPx - th - edgePad)
+                val clampedY = ((screenHeightPx - th) * posFraction).coerceIn(minY, maxY)
                 Offset(sidebarOffsetPx + with(density) { 10.dp.toPx() }, clampedY)
             }
             DockEdge.RIGHT -> {
-                val clampedY = ((screenHeightPx - th) * posFraction).coerceIn(
-                    statusBarHeightPx + with(density) { 8.dp.toPx() },
-                    screenHeightPx - th - with(density) { 8.dp.toPx() }
-                )
-                Offset(screenWidthPx - tw - with(density) { 10.dp.toPx() }, clampedY)
+                val minY = statusBarHeightPx + edgePad
+                val maxY = maxOf(minY, screenHeightPx - th - edgePad)
+                val clampedY = ((screenHeightPx - th) * posFraction).coerceIn(minY, maxY)
+                Offset(maxOf(edgePad, screenWidthPx - tw - with(density) { 10.dp.toPx() }), clampedY)
             }
         }
     }
@@ -162,19 +166,29 @@ fun FloatingNoteToolbar(
     // Smooth position animation when not actively dragging
     val animatedOffset by animateOffsetAsState(
         targetValue = if (isDragging) liveDragOffset else snappedTargetOffset,
-        animationSpec = if (isDragging) snap() else spring(
+        animationSpec = if (isDragging || reducedMotion) snap() else spring(
             stiffness = Spring.StiffnessMediumLow,
             dampingRatio = 0.78f
         ),
         label = "FloatingToolbarPositionAnimation"
     )
 
+    var lastValidAnchor by remember { mutableStateOf(Offset.Zero) }
+    if (activeToolAnchor != Offset.Zero) {
+        lastValidAnchor = activeToolAnchor
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
-        // Scrim backdrop when radial flyout is open: dismisses flyout on outside tap
-        if (isRadialOpen) {
+        // Staging scrim backdrop when radial flyout is open: dims competing canvas noise and dismisses on outside tap
+        AnimatedVisibility(
+            visible = isRadialOpen,
+            enter = fadeIn(animationSpec = BigNotesMotion.enterTween(160, reducedMotion)),
+            exit = fadeOut(animationSpec = BigNotesMotion.exitTween(120, reducedMotion))
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.14f))
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = { isRadialOpen = false })
                     }
@@ -195,6 +209,13 @@ fun FloatingNoteToolbar(
                         animatedOffset.y.roundToInt()
                     )
                 }
+                .animateContentSize(
+                    animationSpec = BigNotesMotion.tactileSpring(
+                        dampingRatio = 0.82f,
+                        stiffness = Spring.StiffnessMedium,
+                        reducedMotion = reducedMotion
+                    )
+                )
                 .onSizeChanged { toolbarSizePx = it }
         ) {
             if (dockEdge.isHorizontal) {
@@ -694,10 +715,11 @@ fun FloatingNoteToolbar(
             }
         }
 
-        // Radial Dual-Arc Satellite Color/Size Flyout
-        if (isRadialOpen && activeToolAnchor != Offset.Zero) {
+        // Radial Dual-Arc Satellite Color/Size Flyout (kept composed to animate both enter and exit symmetrically)
+        if (lastValidAnchor != Offset.Zero) {
             RadialColorSizeFlyout(
-                anchorCenterPx = activeToolAnchor,
+                visible = isRadialOpen && activeToolAnchor != Offset.Zero,
+                anchorCenterPx = lastValidAnchor,
                 dockEdge = dockEdge,
                 paletteColors = paletteColors,
                 selectedColorIndex = selectedColorIndex,
@@ -761,6 +783,10 @@ private fun WritingToolButton(
     onPositioned: (Offset) -> Unit,
     onLongClick: (() -> Unit)? = null
 ) {
+    val reducedMotion = rememberReducedMotion()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
     val icon = when (tool) {
         ActiveTool.FOUNTAIN_PEN -> CustomIcons.FountainPen
         ActiveTool.PENCIL -> CustomIcons.Pencil
@@ -768,14 +794,41 @@ private fun WritingToolButton(
         else -> CustomIcons.FountainPen
     }
 
+    val containerBg by animateColorAsState(
+        targetValue = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent,
+        animationSpec = BigNotesMotion.snappyTween(reducedMotion = reducedMotion),
+        label = "writingToolBg"
+    )
+    val iconTint by animateColorAsState(
+        targetValue = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        animationSpec = BigNotesMotion.snappyTween(reducedMotion = reducedMotion),
+        label = "writingToolTint"
+    )
+    val pipScale by animateFloatAsState(
+        targetValue = if (isActive) 1f else 0f,
+        animationSpec = BigNotesMotion.tactileSpring(
+            dampingRatio = 0.55f,
+            stiffness = Spring.StiffnessMedium,
+            reducedMotion = reducedMotion
+        ),
+        label = "writingToolPipScale"
+    )
+
     Box(
         modifier = Modifier
             .size(36.dp)
-            .clip(CircleShape)
-            .background(
-                if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
+            .tactileScale(
+                isPressed = isPressed,
+                isSelected = isActive,
+                pressedScale = 0.88f,
+                selectedScale = 1.05f,
+                reducedMotion = reducedMotion
             )
+            .clip(CircleShape)
+            .background(containerBg)
             .combinedClickable(
+                interactionSource = interactionSource,
+                indication = ripple(bounded = true),
                 onClick = onToolClick,
                 onLongClick = onLongClick
             )
@@ -790,18 +843,22 @@ private fun WritingToolButton(
                 imageVector = icon,
                 contentDescription = tool.name,
                 modifier = Modifier.size(20.dp),
-                tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                tint = iconTint
             )
 
-            // Active Color Pip Dot
-            if (isActive) {
+            // Active Color Pip Dot (secondary action pop)
+            if (pipScale > 0.01f) {
                 Box(
                     modifier = Modifier
                         .size(6.dp)
-                        .clip(CircleShape)
-                        .background(currentColor)
                         .align(Alignment.BottomEnd)
                         .offset(x = 2.dp, y = 2.dp)
+                        .graphicsLayer {
+                            scaleX = pipScale
+                            scaleY = pipScale
+                        }
+                        .clip(CircleShape)
+                        .background(currentColor)
                 )
             }
         }
@@ -816,24 +873,46 @@ private fun EraserButton(
     onPositioned: (Offset) -> Unit = {},
     onToggleRadial: () -> Unit = {}
 ) {
+    val reducedMotion = rememberReducedMotion()
     val isPrecision = activeTool == ActiveTool.PRECISION_ERASER
     val isStrokeEraser = activeTool == ActiveTool.WHOLE_STROKE_ERASER
     val isEraserActive = isPrecision || isStrokeEraser
+    var isPressed by remember { mutableStateOf(false) }
+
+    val containerBg by animateColorAsState(
+        targetValue = if (isEraserActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent,
+        animationSpec = BigNotesMotion.snappyTween(reducedMotion = reducedMotion),
+        label = "eraserBg"
+    )
+    val iconTint by animateColorAsState(
+        targetValue = if (isEraserActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        animationSpec = BigNotesMotion.snappyTween(reducedMotion = reducedMotion),
+        label = "eraserTint"
+    )
 
     Box(
         modifier = Modifier
             .size(36.dp)
-            .clip(CircleShape)
-            .background(
-                if (isEraserActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                else Color.Transparent
+            .tactileScale(
+                isPressed = isPressed,
+                isSelected = isEraserActive,
+                pressedScale = 0.88f,
+                selectedScale = 1.05f,
+                reducedMotion = reducedMotion
             )
+            .clip(CircleShape)
+            .background(containerBg)
             .onGloballyPositioned { coords ->
                 val bounds = coords.boundsInRoot()
                 onPositioned(Offset(bounds.left + bounds.width / 2f, bounds.top + bounds.height / 2f))
             }
             .pointerInput(isEraserActive, isPrecision, lastEraserMode) {
                 detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        tryAwaitRelease()
+                        isPressed = false
+                    },
                     onTap = {
                         if (!isEraserActive) {
                             onModeSwitch(lastEraserMode)
@@ -855,7 +934,7 @@ private fun EraserButton(
             imageVector = if (isStrokeEraser) Icons.Default.DeleteSweep else Icons.Default.AutoFixNormal,
             contentDescription = if (isStrokeEraser) "Stroke Eraser (Long press to switch)" else "Partial Eraser (Tap for sizes, long press to switch)",
             modifier = Modifier.size(20.dp),
-            tint = if (isEraserActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            tint = iconTint
         )
         if (isEraserActive) {
             Text(
