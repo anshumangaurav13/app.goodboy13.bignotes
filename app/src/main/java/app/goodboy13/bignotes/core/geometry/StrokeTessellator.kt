@@ -297,10 +297,7 @@ object StrokeTessellator {
 
     private fun computeRadiiAlphaTone(
         pressure: Float,
-        speed: Float,
-        tilt: Float,
         baseWidth: Float,
-        baseAlpha: Float,
         graphiteToneId: Float,
         isInk: Boolean,
         isHighlighter: Boolean,
@@ -313,9 +310,8 @@ object StrokeTessellator {
             }
             isInk -> {
                 val nominalR = getInkRadius(pressure, baseWidth)
-                val anisoMarginScale = 1.0f + 0.20f * tilt.coerceIn(0f, 1f)
                 val extraMargin = maxOf(nominalR * quadMarginRatio, 0.75f)
-                val quadR = (nominalR + extraMargin) * anisoMarginScale
+                val quadR = nominalR + extraMargin
                 Triple(quadR, nominalR, 3.5f)
             }
             else -> {
@@ -361,8 +357,8 @@ object StrokeTessellator {
         isHighlighter: Boolean,
         quadMarginRatio: Float
     ): Int {
-        val (R0, rNom0, tone0) = computeRadiiAlphaTone(p0.pressure, p0.speed, p0.tilt, baseWidth, baseAlpha, graphiteToneId, isInk, isHighlighter, quadMarginRatio)
-        val (R1, rNom1, _) = computeRadiiAlphaTone(p1.pressure, p1.speed, p1.tilt, baseWidth, baseAlpha, graphiteToneId, isInk, isHighlighter, quadMarginRatio)
+        val (R0, rNom0, tone0) = computeRadiiAlphaTone(p0.pressure, baseWidth, graphiteToneId, isInk, isHighlighter, quadMarginRatio)
+        val (R1, rNom1, _) = computeRadiiAlphaTone(p1.pressure, baseWidth, graphiteToneId, isInk, isHighlighter, quadMarginRatio)
         val avgAlpha = 0.5f * (
             computePointAlpha(p0.pressure, p0.speed, baseAlpha, isInk, isHighlighter) +
                 computePointAlpha(p1.pressure, p1.speed, baseAlpha, isInk, isHighlighter)
@@ -376,7 +372,7 @@ object StrokeTessellator {
         } else {
             Pair(1f, 0f)
         }
-        val anisoPad = if (isHighlighter) 1.0f else if (isInk) (1.0f + 0.22f * maxTilt) else (1.0f + 1.25f * maxTilt)
+        val anisoPad = if (isHighlighter || isInk) 1.0f else (1.0f + 1.25f * maxTilt)
         val quadPad = maxOf(R0, R1) * anisoPad + 0.5f
 
         val dx = p1.x - p0.x
@@ -427,8 +423,8 @@ object StrokeTessellator {
         isHighlighter: Boolean,
         quadMarginRatio: Float
     ) {
-        val (R0, rNom0, tone0) = computeRadiiAlphaTone(p0.pressure, p0.speed, p0.tilt, baseWidth, baseAlpha, graphiteToneId, isInk, isHighlighter, quadMarginRatio)
-        val (R1, rNom1, _) = computeRadiiAlphaTone(p1.pressure, p1.speed, p1.tilt, baseWidth, baseAlpha, graphiteToneId, isInk, isHighlighter, quadMarginRatio)
+        val (R0, rNom0, tone0) = computeRadiiAlphaTone(p0.pressure, baseWidth, graphiteToneId, isInk, isHighlighter, quadMarginRatio)
+        val (R1, rNom1, _) = computeRadiiAlphaTone(p1.pressure, baseWidth, graphiteToneId, isInk, isHighlighter, quadMarginRatio)
         val avgAlpha = 0.5f * (
             computePointAlpha(p0.pressure, p0.speed, baseAlpha, isInk, isHighlighter) +
                 computePointAlpha(p1.pressure, p1.speed, baseAlpha, isInk, isHighlighter)
@@ -442,7 +438,7 @@ object StrokeTessellator {
         } else {
             Pair(1f, 0f)
         }
-        val anisoPad = if (isHighlighter) 1.0f else if (isInk) (1.0f + 0.22f * maxTilt) else (1.0f + 1.25f * maxTilt)
+        val anisoPad = if (isHighlighter || isInk) 1.0f else (1.0f + 1.25f * maxTilt)
         val quadPad = maxOf(R0, R1) * anisoPad + 0.5f
 
         val dx = p1.x - p0.x

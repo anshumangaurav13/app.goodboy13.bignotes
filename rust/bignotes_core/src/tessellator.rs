@@ -106,7 +106,6 @@ pub fn get_ink_radius(pressure: f32, base_width: f32) -> f32 {
 #[inline]
 fn compute_radii_tone(
     pressure: f32,
-    tilt: f32,
     base_width: f32,
     graphite_tone_id: f32,
     is_ink: bool,
@@ -118,9 +117,8 @@ fn compute_radii_tone(
         (nominal_r, nominal_r, 5.5)
     } else if is_ink {
         let nominal_r = get_ink_radius(pressure, base_width);
-        let aniso_margin_scale = 1.0 + 0.20 * tilt.clamp(0.0, 1.0);
         let extra_margin = (nominal_r * quad_margin_ratio).max(0.75);
-        let quad_r = (nominal_r + extra_margin) * aniso_margin_scale;
+        let quad_r = nominal_r + extra_margin;
         (quad_r, nominal_r, 3.5)
     } else {
         let p = pressure.clamp(0.0, 1.0);
@@ -168,10 +166,10 @@ fn emit_segment_quad(
     quad_margin_ratio: f32,
 ) {
     let (r0, r_nom0, tone0) = compute_radii_tone(
-        p0.pressure, p0.tilt, base_width, graphite_tone_id, is_ink, is_highlighter, quad_margin_ratio,
+        p0.pressure, base_width, graphite_tone_id, is_ink, is_highlighter, quad_margin_ratio,
     );
     let (r1, r_nom1, _) = compute_radii_tone(
-        p1.pressure, p1.tilt, base_width, graphite_tone_id, is_ink, is_highlighter, quad_margin_ratio,
+        p1.pressure, base_width, graphite_tone_id, is_ink, is_highlighter, quad_margin_ratio,
     );
     let avg_alpha = 0.5
         * (compute_point_alpha(p0.pressure, p0.speed, base_alpha, is_ink, is_highlighter)
@@ -195,10 +193,8 @@ fn emit_segment_quad(
         (1.0, 0.0)
     };
 
-    let aniso_pad = if is_highlighter {
+    let aniso_pad = if is_highlighter || is_ink {
         1.0
-    } else if is_ink {
-        1.0 + 0.22 * max_tilt
     } else {
         1.0 + 1.25 * max_tilt
     };

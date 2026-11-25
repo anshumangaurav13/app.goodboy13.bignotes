@@ -64,27 +64,18 @@ void main() {
     float R = max(mix(v_radii.x, v_radii.y, h), 1e-4);
     float rNom = max(mix(v_radii.z, v_radii.w, h), 1e-4);
 
-    // 4. Stylus tilt anisotropy (stub/chisel nib for fountain pen, broadside shading for graphite)
+    // 4. Broadside tilt shading for graphite pencil (fountain pen & highlighter keep a round tip)
     float tilt = clamp(v_nib.z, 0.0, 1.0);
-    vec2 nibDir = (dot(v_nib.xy, v_nib.xy) > 0.01) ? normalize(v_nib.xy) : vec2(1.0, 0.0);
-    vec2 nibPerp = vec2(-nibDir.y, nibDir.x);
-
     float rawDistWorld;
     if (tilt > 0.01 && v_tone < 2.5) {
+        vec2 nibDir = (dot(v_nib.xy, v_nib.xy) > 0.01) ? normalize(v_nib.xy) : vec2(1.0, 0.0);
+        vec2 nibPerp = vec2(-nibDir.y, nibDir.x);
         // Broadside graphite contact ellipse expands wider with tilt
         float alongTilt = dot(dVec, nibDir);
         float acrossTilt = dot(dVec, nibPerp);
         rawDistWorld = length(vec2(
             alongTilt / (1.0 + 1.15 * tilt),
             acrossTilt / (1.0 + 0.35 * tilt)
-        ));
-    } else if (tilt > 0.01 && v_tone < 5.0) {
-        // Stub / chisel fountain pen nib anisotropy
-        float alongNib = dot(dVec, nibDir);
-        float acrossNib = dot(dVec, nibPerp);
-        rawDistWorld = length(vec2(
-            alongNib / (1.0 - 0.30 * tilt),
-            acrossNib / (1.0 + 0.16 * tilt)
         ));
     } else {
         rawDistWorld = length(dVec);
