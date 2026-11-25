@@ -110,8 +110,8 @@ class SketchCanvasView @JvmOverloads constructor(
     }
 
     private var frontBufferedRenderer: GLFrontBufferedRenderer<FrontBufferPacket>? = null
-    private val rawDabPool = Array(8) { FloatArray(512 * 3) }
-    private var rawDabPoolIdx = 0
+    private val rawSegmentPool = Array(8) { FloatArray(512 * app.goodboy13.bignotes.core.geometry.LiveSegmentGenerator.FLOATS_PER_SEGMENT) }
+    private var rawSegmentPoolIdx = 0
 
     // Active tool and eraser state
     var activeTool: ActiveTool = ActiveTool.PENCIL
@@ -345,7 +345,41 @@ class SketchCanvasView @JvmOverloads constructor(
 
     // In-flight stroke points
     private val activeStrokePoints = mutableListOf<StrokePoint>()
-    private var liveDabGenerator: app.goodboy13.bignotes.core.geometry.DabGenerator? = null
+    private var liveSegmentGenerator: app.goodboy13.bignotes.core.geometry.LiveSegmentGenerator? = null
+
+    private fun extractStylusTiltAndOrientation(
+        event: MotionEvent,
+        pointerIndex: Int,
+        historyIndex: Int = -1
+    ): Pair<Float, Float> {
+        val rawTilt = if (historyIndex >= 0) {
+            event.getHistoricalAxisValue(MotionEvent.AXIS_TILT, pointerIndex, historyIndex)
+        } else {
+            event.getAxisValue(MotionEvent.AXIS_TILT, pointerIndex)
+        }
+        val normTilt = (rawTilt / (Math.PI.toFloat() * 0.5f)).coerceIn(0.0f, 1.0f)
+        if (normTilt <= 0.01f) return 0f to 0f
+        val rawOrient = if (historyIndex >= 0) {
+            event.getHistoricalAxisValue(MotionEvent.AXIS_ORIENTATION, pointerIndex, historyIndex)
+        } else {
+            event.getAxisValue(MotionEvent.AXIS_ORIENTATION, pointerIndex)
+        }
+        var wxDir = kotlin.math.sin(rawOrient)
+        var wyDir = -kotlin.math.cos(rawOrient)
+        if (renderer.isFlippedHorizontal) {
+            wxDir = -wxDir
+        }
+        if (renderer.rotationDegrees != 0f) {
+            val rad = Math.toRadians(-renderer.rotationDegrees.toDouble())
+            val c = kotlin.math.cos(rad).toFloat()
+            val s = kotlin.math.sin(rad).toFloat()
+            val rx = wxDir * c - wyDir * s
+            val ry = wxDir * s + wyDir * c
+            wxDir = rx
+            wyDir = ry
+        }
+        return normTilt to kotlin.math.atan2(wyDir, wxDir)
+    }
 
     // Lasso & Selection State
     val activeLassoPoints = mutableListOf<PointF>()
@@ -385,14 +419,8 @@ class SketchCanvasView @JvmOverloads constructor(
                     val p = lastPt?.pressure ?: 0.5f
                     val t = lastPt?.timeMillis ?: System.currentTimeMillis()
                     val densePoints = recognized.toStrokePoints(p, t)
-                    val shapeDabs = StrokeTessellator.generateDabs(
-                        densePoints,
-                        renderer.currentBaseWidth,
-                        isInk = renderer.isCurrentInk,
-                        isHighlighter = renderer.isCurrentHighlighter
-                    )
                     frontBufferedRenderer?.renderFrontBufferedLayer(
-                        FrontBufferPacket(dabs = shapeDabs, clearBeforeDraw = true)
+                        FrontBufferPacket(dabs = densePoints, clearBeforeDraw = true)
                     )
                 }
             }
@@ -421,7 +449,7 @@ class SketchCanvasView @JvmOverloads constructor(
                 cancelShapeSnapTimer()
                 performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                 activeStrokePoints.clear()
-                liveDabGenerator = null
+                liveSegmentGenerator = null
                 frontBufferedRenderer?.renderFrontBufferedLayer(
                     FrontBufferPacket(dabs = emptyList(), clearBeforeDraw = true)
                 )
@@ -854,7 +882,7 @@ class SketchCanvasView @JvmOverloads constructor(
                         if (StrokeClipboard.hasContent) {
                             isLongPressConsumed = true
                             activeStrokePoints.clear()
-                            liveDabGenerator = null
+                            liveSegmentGenerator = null
                             frontBufferedRenderer?.renderFrontBufferedLayer(
                                 FrontBufferPacket(clearBeforeDraw = true)
                             )
@@ -1078,7 +1106,8 @@ class SketchCanvasView @JvmOverloads constructor(
                                 scheduleHoldToEraseTimer(wx, wy, sx, sy)
                             }
                             val timeNanos = getEventTimeNanos(event)
-                            startStylusStroke(wx, wy, sx, sy, effPressure, event.eventTime, timeNanos)
+                            val (tilt, orient) = extractStylusTiltAndOrientation(event, stylusPointerIndex)
+                            startStylusStroke(wx, wy, sx, sy, effPressure, event.eventTime, timeNanos, tilt, orient)
                         }
                     }
                     return true
@@ -1127,40 +1156,44 @@ class SketchCanvasView @JvmOverloads constructor(
                             val lastPoint = activeStrokePoints.lastOrNull()
                             val commitPressure = lastPoint?.pressure ?: effPressure
                             val curTimeNanos = getEventTimeNanos(event)
+                            val (curTilt, curOrient) = extractStylusTiltAndOrientation(event, stylusPointerIndex)
+                            val endSpeed = lastPoint?.speed ?: 0f
+                            val stride = app.goodboy13.bignotes.core.geometry.LiveSegmentGenerator.FLOATS_PER_SEGMENT
                             if (strokeStabilizationEnabled) {
-                                val catchUps = strokeStabilizer.finish(wx, wy, commitPressure, curTimeNanos)
-                                val gen = liveDabGenerator
-                                val poolBuf = rawDabPool[rawDabPoolIdx]
-                                rawDabPoolIdx = (rawDabPoolIdx + 1) % rawDabPool.size
-                                var catchUpDabs = 0
-                                for (p in catchUps) {
+                                val catchUps = strokeStabilizer.finish(wx, wy, commitPressure, curTimeNanos, curTilt, curOrient, endSpeed)
+                                val gen = liveSegmentGenerator
+                                val poolBuf = rawSegmentPool[rawSegmentPoolIdx]
+                                rawSegmentPoolIdx = (rawSegmentPoolIdx + 1) % rawSegmentPool.size
+                                var catchUpSegs = 0
+                                for (idx in catchUps.indices) {
+                                    val p = catchUps[idx]
                                     activeStrokePoints.add(p)
                                     if (gen != null) {
-                                        val added = gen.addPointRaw(p.x, p.y, p.pressure, poolBuf, catchUpDabs * 3)
-                                        catchUpDabs += added
+                                        val isFinal = idx == catchUps.lastIndex
+                                        catchUpSegs += gen.addPointRaw(p, poolBuf, catchUpSegs * stride, isFinal = isFinal)
                                     }
                                 }
-                                if (catchUpDabs > 0) {
+                                if (catchUpSegs > 0) {
                                     frontBufferedRenderer?.renderFrontBufferedLayer(
-                                        FrontBufferPacket(rawDabs = poolBuf, rawDabCount = catchUpDabs, clearBeforeDraw = false)
+                                        FrontBufferPacket(rawSegments = poolBuf, rawSegmentCount = catchUpSegs, clearBeforeDraw = false)
                                     )
                                 }
                             } else {
                                 if (lastPoint == null) {
-                                    activeStrokePoints.add(StrokePoint(wx, wy, commitPressure, event.eventTime, curTimeNanos))
+                                    activeStrokePoints.add(StrokePoint(wx, wy, commitPressure, event.eventTime, curTimeNanos, curTilt, curOrient, 0f))
                                 } else {
                                     val dist = kotlin.math.hypot((wx - lastPoint.x).toDouble(), (wy - lastPoint.y).toDouble()).toFloat()
                                     if (dist >= 0.5f) {
-                                        val curPt = StrokePoint(wx, wy, commitPressure, event.eventTime, curTimeNanos)
+                                        val curPt = StrokePoint(wx, wy, commitPressure, event.eventTime, curTimeNanos, curTilt, curOrient, endSpeed)
                                         activeStrokePoints.add(curPt)
-                                        val gen = liveDabGenerator
+                                        val gen = liveSegmentGenerator
                                         if (gen != null) {
-                                            val poolBuf = rawDabPool[rawDabPoolIdx]
-                                            rawDabPoolIdx = (rawDabPoolIdx + 1) % rawDabPool.size
-                                            val finalDabsCount = gen.addPointRaw(wx, wy, commitPressure, poolBuf, 0)
-                                            if (finalDabsCount > 0) {
+                                            val poolBuf = rawSegmentPool[rawSegmentPoolIdx]
+                                            rawSegmentPoolIdx = (rawSegmentPoolIdx + 1) % rawSegmentPool.size
+                                            val finalSegCount = gen.addPointRaw(curPt, poolBuf, 0, isFinal = true)
+                                            if (finalSegCount > 0) {
                                                 frontBufferedRenderer?.renderFrontBufferedLayer(
-                                                    FrontBufferPacket(rawDabs = poolBuf, rawDabCount = finalDabsCount, clearBeforeDraw = false)
+                                                    FrontBufferPacket(rawSegments = poolBuf, rawSegmentCount = finalSegCount, clearBeforeDraw = false)
                                                 )
                                             }
                                         }
@@ -1185,7 +1218,7 @@ class SketchCanvasView @JvmOverloads constructor(
                         lastPointTimeNanos = 0L
                         lastRecordedTimeNanos = 0L
                         activeStrokePoints.clear()
-                        liveDabGenerator = null
+                        liveSegmentGenerator = null
                         touchState = CanvasTouchState.Idle
                         frontBufferedRenderer?.renderFrontBufferedLayer(
                             FrontBufferPacket(clearBeforeDraw = true)
@@ -1528,7 +1561,9 @@ class SketchCanvasView @JvmOverloads constructor(
         sy: Float,
         pressure: Float,
         time: Long,
-        timeNanos: Long
+        timeNanos: Long,
+        tilt: Float = 0f,
+        orientation: Float = 0f
     ) {
         onPenContactChanged?.invoke(true)
         val targetPageId = onStrokeStarted?.invoke()
@@ -1545,9 +1580,9 @@ class SketchCanvasView @JvmOverloads constructor(
         smoothedStylusSpeed = 0f
 
         val pt = if (strokeStabilizationEnabled) {
-            strokeStabilizer.start(wx, wy, pressure, timeNanos)
+            strokeStabilizer.start(wx, wy, pressure, timeNanos, tilt, orientation, speed = 0f)
         } else {
-            StrokePoint(wx, wy, pressure, time, timeNanos)
+            StrokePoint(wx, wy, pressure, time, timeNanos, tilt, orientation, speed = 0f)
         }
         activeStrokePoints.add(pt)
 
@@ -1564,12 +1599,13 @@ class SketchCanvasView @JvmOverloads constructor(
         val isInk = if (isHighlighter) false else (activeTool == ActiveTool.FOUNTAIN_PEN || renderer.currentTone.isInk)
         renderer.isCurrentInk = isInk
         renderer.isCurrentHighlighter = isHighlighter
-        val stepDist = StrokeTessellator.getStepDistance(renderer.currentBaseWidth, isInk = isInk, isHighlighter = isHighlighter)
-        val gen = DabGenerator(stepDist)
-        liveDabGenerator = gen
-        val dabs = gen.start(pt.x, pt.y, pt.pressure)
+        val gen = app.goodboy13.bignotes.core.geometry.LiveSegmentGenerator()
+        liveSegmentGenerator = gen
+        val poolBuf = rawSegmentPool[rawSegmentPoolIdx]
+        rawSegmentPoolIdx = (rawSegmentPoolIdx + 1) % rawSegmentPool.size
+        val segCount = gen.startRaw(pt, poolBuf, 0)
         frontBufferedRenderer?.renderFrontBufferedLayer(
-            FrontBufferPacket(dabs = dabs, clearBeforeDraw = true)
+            FrontBufferPacket(rawSegments = poolBuf, rawSegmentCount = segCount, clearBeforeDraw = true)
         )
     }
 
@@ -1585,7 +1621,8 @@ class SketchCanvasView @JvmOverloads constructor(
 
         if (activeStrokePoints.isEmpty()) {
             val timeNanos = getEventTimeNanos(event)
-            startStylusStroke(wx, wy, curSx, curSy, effPressure, event.eventTime, timeNanos)
+            val (tilt, orient) = extractStylusTiltAndOrientation(event, stylusPointerIndex)
+            startStylusStroke(wx, wy, curSx, curSy, effPressure, event.eventTime, timeNanos, tilt, orient)
             return
         }
 
@@ -1598,14 +1635,8 @@ class SketchCanvasView @JvmOverloads constructor(
             val adjusted = holdingShape.adjustWithDrag(StrokePoint(curWx, curWy, p, t))
             touchState = CanvasTouchState.HoldingQuickShape(adjusted, activeStrokePoints)
             val densePoints = adjusted.toStrokePoints(p, t)
-            val dabs = StrokeTessellator.generateDabs(
-                densePoints,
-                renderer.currentBaseWidth,
-                isInk = renderer.isCurrentInk,
-                isHighlighter = renderer.isCurrentHighlighter
-            )
             frontBufferedRenderer?.renderFrontBufferedLayer(
-                FrontBufferPacket(dabs = dabs, clearBeforeDraw = true)
+                FrontBufferPacket(dabs = densePoints, clearBeforeDraw = true)
             )
             return
         }
@@ -1623,113 +1654,111 @@ class SketchCanvasView @JvmOverloads constructor(
             }
         }
 
-
         val isHighlighter = activeTool == ActiveTool.HIGHLIGHTER
         val isInk = if (isHighlighter) false else (activeTool == ActiveTool.FOUNTAIN_PEN || renderer.currentTone.isInk)
         renderer.isCurrentInk = isInk
         renderer.isCurrentHighlighter = isHighlighter
-        val stepDist = StrokeTessellator.getStepDistance(renderer.currentBaseWidth, isInk = isInk, isHighlighter = isHighlighter)
-        val gen = liveDabGenerator ?: run {
-                val g = DabGenerator(stepDist)
-                liveDabGenerator = g
-                val first = activeStrokePoints.first()
-                g.start(first.x, first.y, first.pressure)
-                g
-            }
+        val gen = liveSegmentGenerator ?: run {
+            val g = app.goodboy13.bignotes.core.geometry.LiveSegmentGenerator()
+            liveSegmentGenerator = g
+            val first = activeStrokePoints.first()
+            val scratch = FloatArray(app.goodboy13.bignotes.core.geometry.LiveSegmentGenerator.FLOATS_PER_SEGMENT)
+            g.startRaw(first, scratch, 0)
+            g
+        }
 
-            val poolBuf = rawDabPool[rawDabPoolIdx]
-            rawDabPoolIdx = (rawDabPoolIdx + 1) % rawDabPool.size
-            var totalRawDabs = 0
+        val stride = app.goodboy13.bignotes.core.geometry.LiveSegmentGenerator.FLOATS_PER_SEGMENT
+        val poolBuf = rawSegmentPool[rawSegmentPoolIdx]
+        rawSegmentPoolIdx = (rawSegmentPoolIdx + 1) % rawSegmentPool.size
+        var totalRawSegments = 0
 
-            // Add digitizer historical points with responsive physical speed tracking and dynamic velocity thinning
-            for (h in 0 until event.historySize) {
-                val hsx = event.getHistoricalX(stylusPointerIndex, h)
-                val hsy = event.getHistoricalY(stylusPointerIndex, h)
-                val hTime = event.getHistoricalEventTime(h)
-                val hTimeNanos = getEventTimeNanos(event, h)
-                val (hwx, hwy) = screenToWorld(hsx, hsy)
-                val hRawPressure = event.getHistoricalPressure(stylusPointerIndex, h).coerceIn(0.0f, 1.0f)
-                val hBakedPressure = bezierConfig.solveY(hRawPressure)
+        for (h in 0 until event.historySize) {
+            val hsx = event.getHistoricalX(stylusPointerIndex, h)
+            val hsy = event.getHistoricalY(stylusPointerIndex, h)
+            val hTime = event.getHistoricalEventTime(h)
+            val hTimeNanos = getEventTimeNanos(event, h)
+            val (hwx, hwy) = screenToWorld(hsx, hsy)
+            val hRawPressure = event.getHistoricalPressure(stylusPointerIndex, h).coerceIn(0.0f, 1.0f)
+            val hBakedPressure = bezierConfig.solveY(hRawPressure)
+            val (hTilt, hOrient) = extractStylusTiltAndOrientation(event, stylusPointerIndex, h)
 
-                // Calculate instantaneous velocity in physical screen pixels per millisecond
-                val dtNanos = if (lastPointTimeNanos > 0L && hTimeNanos > lastPointTimeNanos) {
-                    hTimeNanos - lastPointTimeNanos
-                } else {
-                    2_777_778L // fallback ~360Hz (2.77ms)
-                }
-                val dtMs = (dtNanos.toFloat() / 1_000_000f).coerceIn(0.2f, 50f)
-                val screenDist = kotlin.math.hypot((hsx - lastScreenX).toDouble(), (hsy - lastScreenY).toDouble()).toFloat()
-                val speed = screenDist / dtMs // screen px/ms
-                smoothedStylusSpeed = smoothedStylusSpeed * 0.40f + speed * 0.60f
-                lastScreenX = hsx
-                lastScreenY = hsy
-                lastPointX = hwx
-                lastPointY = hwy
-                lastPointTimeNanos = hTimeNanos
-
-                val speedFactor = (smoothedStylusSpeed / (smoothedStylusSpeed + 1.5f)).coerceIn(0.0f, 1.0f)
-                val reduction = velocityBezierConfig.solveY(speedFactor)
-                val thinning = if (isInk) {
-                    (1.0f - 0.88f * reduction).coerceIn(0.06f, 1.0f)
-                } else {
-                    1.0f
-                }
-                val finalBakedPressure = (hBakedPressure * (thinning * thinning)).coerceIn(0.01f, 1.0f)
-
-                val ptToAdd = if (strokeStabilizationEnabled) {
-                    strokeStabilizer.update(hwx, hwy, finalBakedPressure, hTimeNanos)
-                } else {
-                    StrokePoint(hwx, hwy, finalBakedPressure, hTime, hTimeNanos)
-                }
-
-                activeStrokePoints.add(ptToAdd)
-                val added = gen.addPointRaw(ptToAdd.x, ptToAdd.y, ptToAdd.pressure, poolBuf, totalRawDabs * 3)
-                totalRawDabs += added
-            }
-
-            // Current event point
-            val curTimeNanos = getEventTimeNanos(event)
-            val dtNanos = if (lastPointTimeNanos > 0L && curTimeNanos > lastPointTimeNanos) {
-                curTimeNanos - lastPointTimeNanos
+            val dtNanos = if (lastPointTimeNanos > 0L && hTimeNanos > lastPointTimeNanos) {
+                hTimeNanos - lastPointTimeNanos
             } else {
                 2_777_778L
             }
             val dtMs = (dtNanos.toFloat() / 1_000_000f).coerceIn(0.2f, 50f)
-            val screenDist = kotlin.math.hypot((curSx - lastScreenX).toDouble(), (curSy - lastScreenY).toDouble()).toFloat()
+            val screenDist = kotlin.math.hypot((hsx - lastScreenX).toDouble(), (hsy - lastScreenY).toDouble()).toFloat()
             val speed = screenDist / dtMs
             smoothedStylusSpeed = smoothedStylusSpeed * 0.40f + speed * 0.60f
-            lastScreenX = curSx
-            lastScreenY = curSy
-            lastPointX = wx
-            lastPointY = wy
-            lastPointTimeNanos = curTimeNanos
+            lastScreenX = hsx
+            lastScreenY = hsy
+            lastPointX = hwx
+            lastPointY = hwy
+            lastPointTimeNanos = hTimeNanos
 
             val speedFactor = (smoothedStylusSpeed / (smoothedStylusSpeed + 1.5f)).coerceIn(0.0f, 1.0f)
             val reduction = velocityBezierConfig.solveY(speedFactor)
-            val thinning = if (isHighlighter) {
-                1.0f
-            } else if (isInk) {
+            val thinning = if (isInk) {
                 (1.0f - 0.88f * reduction).coerceIn(0.06f, 1.0f)
             } else {
                 1.0f
             }
-            val finalEffPressure = (effPressure * (thinning * thinning)).coerceIn(0.01f, 1.0f)
+            val finalBakedPressure = (hBakedPressure * (thinning * thinning)).coerceIn(0.01f, 1.0f)
 
             val ptToAdd = if (strokeStabilizationEnabled) {
-                strokeStabilizer.update(wx, wy, finalEffPressure, curTimeNanos)
+                strokeStabilizer.update(hwx, hwy, finalBakedPressure, hTimeNanos, hTilt, hOrient, speedFactor)
             } else {
-                StrokePoint(wx, wy, finalEffPressure, event.eventTime, curTimeNanos)
+                StrokePoint(hwx, hwy, finalBakedPressure, hTime, hTimeNanos, hTilt, hOrient, speedFactor)
             }
 
             activeStrokePoints.add(ptToAdd)
-            val added = gen.addPointRaw(ptToAdd.x, ptToAdd.y, ptToAdd.pressure, poolBuf, totalRawDabs * 3)
-            totalRawDabs += added
+            totalRawSegments += gen.addPointRaw(ptToAdd, poolBuf, totalRawSegments * stride)
+        }
 
-            if (totalRawDabs > 0) {
-                frontBufferedRenderer?.renderFrontBufferedLayer(
-                    FrontBufferPacket(rawDabs = poolBuf, rawDabCount = totalRawDabs, clearBeforeDraw = false)
-                )
-            }
+        // Current event point
+        val curTimeNanos = getEventTimeNanos(event)
+        val (curTilt, curOrient) = extractStylusTiltAndOrientation(event, stylusPointerIndex)
+        val dtNanos = if (lastPointTimeNanos > 0L && curTimeNanos > lastPointTimeNanos) {
+            curTimeNanos - lastPointTimeNanos
+        } else {
+            2_777_778L
+        }
+        val dtMs = (dtNanos.toFloat() / 1_000_000f).coerceIn(0.2f, 50f)
+        val screenDist = kotlin.math.hypot((curSx - lastScreenX).toDouble(), (curSy - lastScreenY).toDouble()).toFloat()
+        val speed = screenDist / dtMs
+        smoothedStylusSpeed = smoothedStylusSpeed * 0.40f + speed * 0.60f
+        lastScreenX = curSx
+        lastScreenY = curSy
+        lastPointX = wx
+        lastPointY = wy
+        lastPointTimeNanos = curTimeNanos
+
+        val speedFactor = (smoothedStylusSpeed / (smoothedStylusSpeed + 1.5f)).coerceIn(0.0f, 1.0f)
+        val reduction = velocityBezierConfig.solveY(speedFactor)
+        val thinning = if (isHighlighter) {
+            1.0f
+        } else if (isInk) {
+            (1.0f - 0.88f * reduction).coerceIn(0.06f, 1.0f)
+        } else {
+            1.0f
+        }
+        val finalEffPressure = (effPressure * (thinning * thinning)).coerceIn(0.01f, 1.0f)
+
+        val ptToAdd = if (strokeStabilizationEnabled) {
+            strokeStabilizer.update(wx, wy, finalEffPressure, curTimeNanos, curTilt, curOrient, speedFactor)
+        } else {
+            StrokePoint(wx, wy, finalEffPressure, event.eventTime, curTimeNanos, curTilt, curOrient, speedFactor)
+        }
+
+        activeStrokePoints.add(ptToAdd)
+        totalRawSegments += gen.addPointRaw(ptToAdd, poolBuf, totalRawSegments * stride)
+
+        if (totalRawSegments > 0) {
+            frontBufferedRenderer?.renderFrontBufferedLayer(
+                FrontBufferPacket(rawSegments = poolBuf, rawSegmentCount = totalRawSegments, clearBeforeDraw = false)
+            )
+        }
     }
 
     private fun finalizeCurrentStroke() {
@@ -1758,7 +1787,7 @@ class SketchCanvasView @JvmOverloads constructor(
             onStrokesChanged?.invoke(renderer.getCommittedStrokes())
 
             activeStrokePoints.clear()
-            liveDabGenerator = null
+            liveSegmentGenerator = null
             touchState = CanvasTouchState.Idle
 
             frontBufferedRenderer?.commit()
@@ -1910,7 +1939,7 @@ class SketchCanvasView @JvmOverloads constructor(
             s.copy(
                 id = UUID.randomUUID().toString(),
                 points = s.points.map { pt ->
-                    StrokePoint(pt.x + offset, pt.y + offset, pt.pressure, pt.timeMillis)
+                    pt.copy(x = pt.x + offset, y = pt.y + offset)
                 }
             )
         }
@@ -1957,7 +1986,7 @@ class SketchCanvasView @JvmOverloads constructor(
             s.copy(
                 id = UUID.randomUUID().toString(),
                 points = s.points.map { pt ->
-                    StrokePoint(pt.x + offsetX, pt.y + offsetY, pt.pressure, pt.timeMillis)
+                    pt.copy(x = pt.x + offsetX, y = pt.y + offsetY)
                 }
             )
         }
@@ -2016,7 +2045,7 @@ class SketchCanvasView @JvmOverloads constructor(
             s.copy(
                 id = UUID.randomUUID().toString(),
                 points = s.points.map { pt ->
-                    StrokePoint(pt.x + dx, pt.y + dy, pt.pressure, pt.timeMillis)
+                    pt.copy(x = pt.x + dx, y = pt.y + dy)
                 }
             )
         }

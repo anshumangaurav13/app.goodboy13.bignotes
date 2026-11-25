@@ -1,6 +1,7 @@
 package app.goodboy13.bignotes.core.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class InkBleedConfigTest {
@@ -22,6 +23,13 @@ class InkBleedConfigTest {
     }
 
     @Test
+    fun `legacy schema v1 json migrates dab overdraw dilution to single-pass range`() {
+        val legacyJson = """{"inkDilution":0.20,"bleedRatio":0.98,"wetSheen":0.48}"""
+        val decoded = InkBleedConfig.fromJsonString(legacyJson)
+        assertTrue("Expected migrated dilution near ~0.87, was ${decoded.inkDilution}", decoded.inkDilution > 0.80f)
+    }
+
+    @Test
     fun `clamped constrains out-of-range values to valid shader bounds`() {
         val extreme = InkBleedConfig(
             bleedRatio = 9.0f,
@@ -34,7 +42,6 @@ class InkBleedConfigTest {
             inkDilution = 0.0f,
             fiberFeathering = 2.0f,
             meniscusRim = -0.5f,
-            wetSheen = 4.0f,
             chromaHalo = -0.2f
         ).clamped()
 
@@ -45,10 +52,9 @@ class InkBleedConfigTest {
         assertEquals(0.10f, extreme.aaWidth, 1e-5f)
         assertEquals(0.00f, extreme.paperGrainMix, 1e-5f)
         assertEquals(1.60f, extreme.quadMarginRatio, 1e-5f)
-        assertEquals(0.02f, extreme.inkDilution, 1e-5f)
+        assertEquals(0.05f, extreme.inkDilution, 1e-5f)
         assertEquals(1.00f, extreme.fiberFeathering, 1e-5f)
         assertEquals(0.00f, extreme.meniscusRim, 1e-5f)
-        assertEquals(1.00f, extreme.wetSheen, 1e-5f)
         assertEquals(0.00f, extreme.chromaHalo, 1e-5f)
     }
 }

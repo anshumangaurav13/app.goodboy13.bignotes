@@ -52,7 +52,10 @@ data class StrokePoint(
     val y: Float,
     val pressure: Float,
     val timeMillis: Long,
-    val timeNanos: Long = timeMillis * 1_000_000L
+    val timeNanos: Long = timeMillis * 1_000_000L,
+    val tilt: Float = 0f,        // Normalized stylus tilt [0..1] (0 = upright, 1 = flat)
+    val orientation: Float = 0f, // World-space azimuth angle in radians [-PI..PI]
+    val speed: Float = 0f        // Normalized smoothed stroke speed [0..1] (0 = slow/dwell, 1 = fast)
 )
 
 data class StrokeStabilizationConfig(

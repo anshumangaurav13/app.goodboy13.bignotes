@@ -54,15 +54,28 @@ object BigNoteBinaryFormat {
     private const val VERSION_V3_DEFLATED: Byte = 3
     private const val VERSION_V4_DEFLATED: Byte = 4
     private const val VERSION_V5_DEFLATED: Byte = 5
+    private const val VERSION_V6_DEFLATED: Byte = 6
     private const val V1_QUANTIZE_SCALE = 20.0f
+    private const val TWO_PI = (Math.PI * 2.0).toFloat()
+
+    private fun encodeOrientByte(orientRad: Float): Int {
+        var norm = (orientRad / TWO_PI + 0.5f) % 1.0f
+        if (norm < 0f) norm += 1.0f
+        return (norm * 255f).roundToInt().coerceIn(0, 255)
+    }
+
+    private fun decodeOrientByte(b: Int): Float {
+        val norm = (b and 0xFF) / 255.0f
+        return (norm - 0.5f) * TWO_PI
+    }
 
     fun serialize(doc: BigNoteDocument): ByteArray {
         val byteOut = ByteArrayOutputStream(1024)
         val out = DataOutputStream(BufferedOutputStream(byteOut, 16384))
 
-        // 1. Header (Magic + Version 5: Quantized + Deflater Zlib + Highlighter flag + Images + Text Blocks)
+        // 1. Header (Magic + Version 6: Quantized + Deflater Zlib + Tilt/Orient/Speed + Images + Text Blocks)
         out.write(MAGIC)
-        out.writeByte(VERSION_V5_DEFLATED.toInt())
+        out.writeByte(VERSION_V6_DEFLATED.toInt())
 
 
         // 2. Metadata Block
@@ -101,6 +114,9 @@ object BigNoteBinaryFormat {
                 strokeDataOut.writeFloat(lastY)
                 strokeDataOut.writeByte((points[0].pressure.coerceIn(0f, 1f) * 255f).roundToInt().coerceIn(0, 255))
                 strokeDataOut.writeLong(lastTime)
+                strokeDataOut.writeByte((points[0].tilt.coerceIn(0f, 1f) * 255f).roundToInt().coerceIn(0, 255))
+                strokeDataOut.writeByte(encodeOrientByte(points[0].orientation))
+                strokeDataOut.writeByte((points[0].speed.coerceIn(0f, 1f) * 255f).roundToInt().coerceIn(0, 255))
 
                 for (p in 1 until points.size) {
                     val pt = points[p]
@@ -113,6 +129,9 @@ object BigNoteBinaryFormat {
                     strokeDataOut.writeShort(dyQuant.toInt())
                     strokeDataOut.writeByte(rawP.toInt())
                     strokeDataOut.writeInt(dt)
+                    strokeDataOut.writeByte((pt.tilt.coerceIn(0f, 1f) * 255f).roundToInt().coerceIn(0, 255))
+                    strokeDataOut.writeByte(encodeOrientByte(pt.orientation))
+                    strokeDataOut.writeByte((pt.speed.coerceIn(0f, 1f) * 255f).roundToInt().coerceIn(0, 255))
 
                     // Accumulate exact reconstructed steps to prevent floating drift
                     lastX += dxQuant.toFloat() / V1_QUANTIZE_SCALE
@@ -265,8 +284,8 @@ object BigNoteBinaryFormat {
                     strokes = strokes
                 )
             }
-            VERSION_V1_DEFLATED, VERSION_V3_DEFLATED, VERSION_V4_DEFLATED, VERSION_V5_DEFLATED -> {
-                // Version 1 / Version 3 / Version 4 / Version 5 (Deflated with 16-bit Quantization + Images + Text Blocks)
+            VERSION_V1_DEFLATED, VERSION_V3_DEFLATED, VERSION_V4_DEFLATED, VERSION_V5_DEFLATED, VERSION_V6_DEFLATED -> {
+                // Version 1 / Version 3 / Version 4 / Version 5 / Version 6
                 val compressedSize = `in`.readInt()
                 val compressedBytes = ByteArray(compressedSize)
                 `in`.readFully(compressedBytes)
@@ -296,20 +315,26 @@ object BigNoteBinaryFormat {
                         var curY = strokeDataIn.readFloat()
                         var curP = (strokeDataIn.readByte().toInt() and 0xFF) / 255.0f
                         var curTime = strokeDataIn.readLong()
-                        points.add(StrokePoint(curX, curY, curP, curTime))
+                        val initTilt = if (version >= VERSION_V6_DEFLATED) (strokeDataIn.readByte().toInt() and 0xFF) / 255.0f else 0f
+                        val initOrient = if (version >= VERSION_V6_DEFLATED) decodeOrientByte(strokeDataIn.readByte().toInt()) else 0f
+                        val initSpeed = if (version >= VERSION_V6_DEFLATED) (strokeDataIn.readByte().toInt() and 0xFF) / 255.0f else 0f
+                        points.add(StrokePoint(curX, curY, curP, curTime, tilt = initTilt, orientation = initOrient, speed = initSpeed))
 
                         for (p in 1 until pointCount) {
                             val dx = strokeDataIn.readShort()
                             val dy = strokeDataIn.readShort()
                             val rawP = strokeDataIn.readByte()
                             val dt = strokeDataIn.readInt()
+                            val ptTilt = if (version >= VERSION_V6_DEFLATED) (strokeDataIn.readByte().toInt() and 0xFF) / 255.0f else 0f
+                            val ptOrient = if (version >= VERSION_V6_DEFLATED) decodeOrientByte(strokeDataIn.readByte().toInt()) else 0f
+                            val ptSpeed = if (version >= VERSION_V6_DEFLATED) (strokeDataIn.readByte().toInt() and 0xFF) / 255.0f else 0f
 
                             curX += dx.toFloat() / V1_QUANTIZE_SCALE
                             curY += dy.toFloat() / V1_QUANTIZE_SCALE
                             curP = (rawP.toInt() and 0xFF) / 255.0f
                             curTime += dt
 
-                            points.add(StrokePoint(curX, curY, curP, curTime))
+                            points.add(StrokePoint(curX, curY, curP, curTime, tilt = ptTilt, orientation = ptOrient, speed = ptSpeed))
                         }
                     }
 

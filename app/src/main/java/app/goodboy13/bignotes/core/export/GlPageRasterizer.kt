@@ -115,7 +115,6 @@ class GlPageRasterizer(
         s.inkDilution = inkBleedConfig.inkDilution
         s.fiberFeathering = inkBleedConfig.fiberFeathering
         s.meniscusRim = inkBleedConfig.meniscusRim
-        s.wetSheen = inkBleedConfig.wetSheen
         s.chromaHalo = inkBleedConfig.chromaHalo
         shader = s
 

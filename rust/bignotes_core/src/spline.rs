@@ -4,6 +4,9 @@ pub struct StrokePoint {
     pub y: f32,
     pub pressure: f32,
     pub time_millis: i64,
+    pub tilt: f32,
+    pub orientation: f32,
+    pub speed: f32,
 }
 
 impl StrokePoint {
@@ -14,8 +17,49 @@ impl StrokePoint {
             y,
             pressure,
             time_millis,
+            tilt: 0.0,
+            orientation: 0.0,
+            speed: 0.0,
         }
     }
+
+    #[inline(always)]
+    pub fn with_dynamics(
+        x: f32,
+        y: f32,
+        pressure: f32,
+        time_millis: i64,
+        tilt: f32,
+        orientation: f32,
+        speed: f32,
+    ) -> Self {
+        Self {
+            x,
+            y,
+            pressure,
+            time_millis,
+            tilt,
+            orientation,
+            speed,
+        }
+    }
+}
+
+#[inline(always)]
+fn interpolate_tilt_orientation(a: StrokePoint, b: StrokePoint, t: f32) -> (f32, f32) {
+    let tilt = (a.tilt + (b.tilt - a.tilt) * t).clamp(0.0, 1.0);
+    if tilt <= 0.005 {
+        return (0.0, 0.0);
+    }
+    let ax = a.tilt * a.orientation.cos();
+    let ay = a.tilt * a.orientation.sin();
+    let bx = b.tilt * b.orientation.cos();
+    let by = b.tilt * b.orientation.sin();
+    let vx = ax + (bx - ax) * t;
+    let vy = ay + (by - ay) * t;
+    let mag = vx.hypot(vy);
+    let orient = if mag > 1e-5 { vy.atan2(vx) } else { b.orientation };
+    (tilt, orient)
 }
 
 pub struct CatmullRomSpline;
@@ -81,11 +125,15 @@ impl CatmullRomSpline {
 
         for s in 0..=steps {
             let t = (s as f32) * inv_steps;
+            let (tilt, orientation) = interpolate_tilt_orientation(p0, p1, t);
             list.push(StrokePoint {
                 x: p0.x + (p1.x - p0.x) * t,
                 y: p0.y + (p1.y - p0.y) * t,
-                pressure: p0.pressure + (p1.pressure - p0.pressure) * t,
+                pressure: (p0.pressure + (p1.pressure - p0.pressure) * t).clamp(0.0, 1.0),
                 time_millis: (p0.time_millis as f64 + (p1.time_millis - p0.time_millis) as f64 * t as f64) as i64,
+                tilt,
+                orientation,
+                speed: (p0.speed + (p1.speed - p0.speed) * t).clamp(0.0, 1.0),
             });
         }
         list
@@ -96,8 +144,6 @@ impl CatmullRomSpline {
         let t2 = t * t;
         let t3 = t2 * t;
 
-        // Standard Catmull-Rom basis:
-        // q(t) = 0.5 * ((2*p1) + (-p0 + p2)*t + (2*p0 - 5*p1 + 4*p2 - p3)*t^2 + (-p0 + 3*p1 - 3*p2 + p3)*t^3)
         let f1 = -t3 + 2.0 * t2 - t;
         let f2 = 3.0 * t3 - 5.0 * t2 + 2.0;
         let f3 = -3.0 * t3 + 4.0 * t2 + t;
@@ -106,13 +152,18 @@ impl CatmullRomSpline {
         let x = 0.5 * (p0.x * f1 + p1.x * f2 + p2.x * f3 + p3.x * f4);
         let y = 0.5 * (p0.y * f1 + p1.y * f2 + p2.y * f3 + p3.y * f4);
         let pressure = (0.5 * (p0.pressure * f1 + p1.pressure * f2 + p2.pressure * f3 + p3.pressure * f4)).clamp(0.0, 1.0);
-        let time = (0.5 * (p0.time_millis as f32 * f1 + p1.time_millis as f32 * f2 + p2.time_millis as f32 * f3 + p3.time_millis as f32 * f4)) as i64;
+        let time = (p1.time_millis as f64 + (p2.time_millis - p1.time_millis) as f64 * t as f64) as i64;
+        let (tilt, orientation) = interpolate_tilt_orientation(p1, p2, t);
+        let speed = (p1.speed + (p2.speed - p1.speed) * t).clamp(0.0, 1.0);
 
         StrokePoint {
             x,
             y,
             pressure,
             time_millis: time,
+            tilt,
+            orientation,
+            speed,
         }
     }
 
@@ -145,32 +196,25 @@ impl CatmullRomSpline {
         let four = vdupq_n_f32(4.0);
         let five = vdupq_n_f32(5.0);
 
-        // f1 = -t3 + 2*t2 - t
         let f1 = vsubq_f32(vmlaq_f32(vnegq_f32(t3), two, t2), t);
-        // f2 = 3*t3 - 5*t2 + 2
         let f2 = vaddq_f32(vsubq_f32(vmulq_f32(three, t3), vmulq_f32(five, t2)), two);
-        // f3 = -3*t3 + 4*t2 + t
         let f3 = vaddq_f32(vsubq_f32(vmulq_f32(four, t2), vmulq_f32(three, t3)), t);
-        // f4 = t3 - t2
         let f4 = vsubq_f32(t3, t2);
 
         let half = vdupq_n_f32(0.5);
 
-        // x
         let mut x_acc = vmulq_n_f32(f1, p0.x);
         x_acc = vmlaq_n_f32(x_acc, f2, p1.x);
         x_acc = vmlaq_n_f32(x_acc, f3, p2.x);
         x_acc = vmlaq_n_f32(x_acc, f4, p3.x);
         let x_res = vmulq_f32(x_acc, half);
 
-        // y
         let mut y_acc = vmulq_n_f32(f1, p0.y);
         y_acc = vmlaq_n_f32(y_acc, f2, p1.y);
         y_acc = vmlaq_n_f32(y_acc, f3, p2.y);
         y_acc = vmlaq_n_f32(y_acc, f4, p3.y);
         let y_res = vmulq_f32(y_acc, half);
 
-        // pressure
         let mut p_acc = vmulq_n_f32(f1, p0.pressure);
         p_acc = vmlaq_n_f32(p_acc, f2, p1.pressure);
         p_acc = vmlaq_n_f32(p_acc, f3, p2.pressure);
@@ -186,11 +230,21 @@ impl CatmullRomSpline {
         vst1q_f32(y_out.as_mut_ptr(), y_res);
         vst1q_f32(p_out.as_mut_ptr(), p_res);
 
+        let t0 = (s_start as f32) * inv_steps;
+        let t1 = ((s_start + 1) as f32) * inv_steps;
+        let t2_s = ((s_start + 2) as f32) * inv_steps;
+        let t3_s = ((s_start + 3) as f32) * inv_steps;
+
+        let (tilt0, ori0) = interpolate_tilt_orientation(p1, p2, t0);
+        let (tilt1, ori1) = interpolate_tilt_orientation(p1, p2, t1);
+        let (tilt2, ori2) = interpolate_tilt_orientation(p1, p2, t2_s);
+        let (tilt3, ori3) = interpolate_tilt_orientation(p1, p2, t3_s);
+
         [
-            StrokePoint::new(x_out[0], y_out[0], p_out[0], p1.time_millis),
-            StrokePoint::new(x_out[1], y_out[1], p_out[1], p1.time_millis),
-            StrokePoint::new(x_out[2], y_out[2], p_out[2], p1.time_millis),
-            StrokePoint::new(x_out[3], y_out[3], p_out[3], p1.time_millis),
+            StrokePoint::with_dynamics(x_out[0], y_out[0], p_out[0], p1.time_millis, tilt0, ori0, (p1.speed + (p2.speed - p1.speed) * t0).clamp(0.0, 1.0)),
+            StrokePoint::with_dynamics(x_out[1], y_out[1], p_out[1], p1.time_millis, tilt1, ori1, (p1.speed + (p2.speed - p1.speed) * t1).clamp(0.0, 1.0)),
+            StrokePoint::with_dynamics(x_out[2], y_out[2], p_out[2], p1.time_millis, tilt2, ori2, (p1.speed + (p2.speed - p1.speed) * t2_s).clamp(0.0, 1.0)),
+            StrokePoint::with_dynamics(x_out[3], y_out[3], p_out[3], p1.time_millis, tilt3, ori3, (p1.speed + (p2.speed - p1.speed) * t3_s).clamp(0.0, 1.0)),
         ]
     }
 }

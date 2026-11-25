@@ -25,7 +25,9 @@ data class FrontBufferPacket(
     val dabs: List<StrokePoint> = emptyList(),
     val clearBeforeDraw: Boolean = false,
     val rawDabs: FloatArray? = null,
-    val rawDabCount: Int = 0
+    val rawDabCount: Int = 0,
+    val rawSegments: FloatArray? = null,
+    val rawSegmentCount: Int = 0
 )
 
 class SketchCanvasRenderer(
@@ -157,7 +159,6 @@ class SketchCanvasRenderer(
             shader.inkDilution = inkBleedConfig.inkDilution
             shader.fiberFeathering = inkBleedConfig.fiberFeathering
             shader.meniscusRim = inkBleedConfig.meniscusRim
-            shader.wetSheen = inkBleedConfig.wetSheen
             shader.chromaHalo = inkBleedConfig.chromaHalo
         }
     }
@@ -559,6 +560,7 @@ class SketchCanvasRenderer(
         }
 
         GLES30.glEnable(GLES30.GL_BLEND)
+        applyInkShaderParams()
         shader.invertColors = isDarkMode
         shader.use(mvpMatrix, noiseTextureId)
 
@@ -624,10 +626,11 @@ class SketchCanvasRenderer(
         // 4. Final MVP: world coordinates -> view pixels -> buffer NDC
         Matrix.multiplyMM(frontBufferMvpMatrix, 0, screenProjectionMatrix, 0, currentWorldToViewMatrix, 0)
 
+        val hasRawSegments = param.rawSegments != null && param.rawSegmentCount > 0
         val hasRawDabs = param.rawDabs != null && param.rawDabCount > 0
         val hasListDabs = param.dabs.isNotEmpty()
         if (param.clearBeforeDraw) {
-            if (!hasRawDabs && !hasListDabs) {
+            if (!hasRawSegments && !hasRawDabs && !hasListDabs) {
                 GLES30.glClearColor(0.0f, 0.0f, 0.0f, 0.0f)
                 GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
                 return
@@ -640,7 +643,7 @@ class SketchCanvasRenderer(
                 currentWorldToViewMatrix
             )
         }
-        if (!hasRawDabs && !hasListDabs) return
+        if (!hasRawSegments && !hasRawDabs && !hasListDabs) return
 
         val shader = graphiteShader ?: return
 
@@ -655,13 +658,28 @@ class SketchCanvasRenderer(
             GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         }
 
+        applyInkShaderParams()
         shader.invertColors = isDarkMode
         shader.use(frontBufferMvpMatrix, noiseTextureId)
 
-        val dabCount = if (hasRawDabs) param.rawDabCount else param.dabs.size
-        val targetBuf = getFrontBuffer(dabCount * 6)
-        val mesh = if (hasRawDabs) {
-            StrokeTessellator.tessellateRawDabs(
+        val itemCount = when {
+            hasRawSegments -> param.rawSegmentCount
+            hasRawDabs -> param.rawDabCount
+            else -> param.dabs.size
+        }
+        val targetBuf = getFrontBuffer(itemCount * 6)
+        val mesh = when {
+            hasRawSegments -> StrokeTessellator.tessellateRawSegments(
+                param.rawSegments!!,
+                param.rawSegmentCount,
+                currentTone,
+                currentBaseWidth,
+                targetBuf,
+                colorRgb = currentColorRgb,
+                isInk = isCurrentInk,
+                isHighlighter = isCurrentHighlighter
+            )
+            hasRawDabs -> StrokeTessellator.tessellateRawDabs(
                 param.rawDabs!!,
                 param.rawDabCount,
                 currentTone,
@@ -671,8 +689,7 @@ class SketchCanvasRenderer(
                 isInk = isCurrentInk,
                 isHighlighter = isCurrentHighlighter
             )
-        } else {
-            StrokeTessellator.tessellateDabs(
+            else -> StrokeTessellator.tessellateDabs(
                 param.dabs,
                 currentTone,
                 currentBaseWidth,
@@ -732,6 +749,7 @@ class SketchCanvasRenderer(
                 worldOffsetY = selectionDragDy
             )
             Matrix.multiplyMM(selectionMvpMatrix, 0, screenProjectionMatrix, 0, selectionWorldToViewMatrix, 0)
+            applyInkShaderParams()
             shader.invertColors = isDarkMode
             shader.use(selectionMvpMatrix, noiseTextureId)
             val selHighlighters = selectedStrokes.filter { it.isHighlighter }

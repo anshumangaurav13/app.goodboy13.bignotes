@@ -78,4 +78,26 @@ class StrokeTessellatorOptimizationTest {
         assertEquals(18 * StrokeTessellator.FLOATS_PER_VERTEX, mesh.vertexBuffer.limit())
         assertEquals(0, mesh.vertexBuffer.position())
     }
+
+    @Test
+    fun testCapsuleSegmentTessellation_encodesTrimAndTiltDynamics() {
+        val points = listOf(
+            StrokePoint(0f, 0f, 0.5f, 0L, tilt = 0.6f, orientation = 0.0f, speed = 0.0f),
+            StrokePoint(20f, 0f, 0.7f, 10L, tilt = 0.6f, orientation = 0.0f, speed = 0.5f),
+            StrokePoint(40f, 20f, 0.6f, 20L, tilt = 0.6f, orientation = 0.0f, speed = 1.0f)
+        )
+        val mesh = StrokeTessellator.tessellateToCachedMesh(
+            points = points,
+            tone = PencilTone.INK_BLACK,
+            baseWidth = 6.0f,
+            isInk = true
+        )
+        assertTrue(mesh.vertexCount >= 12)
+        assertEquals(0, mesh.vertexCount % 6)
+        assertEquals(mesh.vertexCount * StrokeTessellator.FLOATS_PER_VERTEX, mesh.data.size)
+        // First vertex tilt attribute (offset 21) should carry stylus tilt
+        assertEquals(0.6f, mesh.data[21], 1e-4f)
+        // First segment dwell in alpha (offset 13) should reflect slow corner > fast end
+        assertTrue(mesh.data[13] > mesh.data[mesh.data.size - StrokeTessellator.FLOATS_PER_VERTEX + 13])
+    }
 }

@@ -43,13 +43,26 @@ class StrokeStabilizer(
     private var tipVx = 0f
     private var tipVy = 0f
 
-    // Pressure Filter
+    // Pressure & Tilt vector filtering
     private var smoothedPressure = 0.5f
+    private var smoothedTiltX = 0f
+    private var smoothedTiltY = 0f
+    private var lastTilt = 0f
+    private var lastOrientation = 0f
+    private var lastSpeed = 0f
 
     /**
      * Initializes the stabilizer with the initial touchdown coordinate.
      */
-    fun start(x: Float, y: Float, pressure: Float, timeNanos: Long): StrokePoint {
+    fun start(
+        x: Float,
+        y: Float,
+        pressure: Float,
+        timeNanos: Long,
+        tilt: Float = 0f,
+        orientation: Float = 0f,
+        speed: Float = 0f
+    ): StrokePoint {
         hasStarted = true
         lastRawX = x
         lastRawY = y
@@ -66,13 +79,22 @@ class StrokeStabilizer(
         tipVy = 0f
 
         smoothedPressure = pressure.coerceIn(0.01f, 1.0f)
+        val cTilt = tilt.coerceIn(0f, 1f)
+        smoothedTiltX = cTilt * kotlin.math.cos(orientation)
+        smoothedTiltY = cTilt * kotlin.math.sin(orientation)
+        lastTilt = cTilt
+        lastOrientation = orientation
+        lastSpeed = speed.coerceIn(0f, 1f)
 
         return StrokePoint(
             x = x,
             y = y,
             pressure = smoothedPressure,
             timeMillis = timeNanos / 1_000_000L,
-            timeNanos = timeNanos
+            timeNanos = timeNanos,
+            tilt = lastTilt,
+            orientation = lastOrientation,
+            speed = lastSpeed
         )
     }
 
@@ -80,11 +102,21 @@ class StrokeStabilizer(
      * Updates the stabilizer with an incoming digitizer position.
      * All time intervals are computed strictly in nanoseconds.
      */
-    fun update(rawX: Float, rawY: Float, rawPressure: Float, timeNanos: Long): StrokePoint {
+    fun update(
+        rawX: Float,
+        rawY: Float,
+        rawPressure: Float,
+        timeNanos: Long,
+        rawTilt: Float = 0f,
+        rawOrientation: Float = 0f,
+        rawSpeed: Float = 0f
+    ): StrokePoint {
         if (!hasStarted) {
-            return start(rawX, rawY, rawPressure, timeNanos)
+            return start(rawX, rawY, rawPressure, timeNanos, rawTilt, rawOrientation, rawSpeed)
         }
 
+        val cTilt = rawTilt.coerceIn(0f, 1f)
+        val cSpeed = rawSpeed.coerceIn(0f, 1f)
         val level = config.level.coerceIn(0.0f, 1.0f)
         if (!config.enabled || level <= 0.001f) {
             lastRawX = rawX
@@ -96,7 +128,10 @@ class StrokeStabilizer(
             tipVx = 0f
             tipVy = 0f
             smoothedPressure = rawPressure
-            return StrokePoint(rawX, rawY, rawPressure, timeNanos / 1_000_000L, timeNanos)
+            lastTilt = cTilt
+            lastOrientation = rawOrientation
+            lastSpeed = cSpeed
+            return StrokePoint(rawX, rawY, rawPressure, timeNanos / 1_000_000L, timeNanos, cTilt, rawOrientation, cSpeed)
         }
 
         // Strict monotonic positive delta-t in nanoseconds
@@ -124,15 +159,9 @@ class StrokeStabilizer(
         anchorY += alphaWobble * (rawY - anchorY)
 
         // Stage 2: Critically Damped Physical Spring-Mass-Damper
-        // Natural frequency omega (rad/s): lower omega = stronger smoothing / heavier mass
-        // At level 0.5 (Google Keep baseline), omega ~ 55 rad/s (tau ~ 18ms)
         val baseOmega = 18.0f + 150.0f * (1.0f - level).pow(1.5f)
-        // Speed boost: tighten spring during rapid flicks to eliminate tracking delay
         val effOmega = baseOmega * (1.0f + 1.25f * speedFactor)
 
-        // Exact analytical closed-form step for critically damped harmonic oscillator:
-        // x(t) = (x0 + (v0 + omega*x0)*t) * exp(-omega*t)
-        // v(t) = (v0 - omega*(v0 + omega*x0)*t) * exp(-omega*t)
         val dx = tipX - anchorX
         val dy = tipY - anchorY
         val decay = exp(-effOmega * dtSec)
@@ -144,10 +173,18 @@ class StrokeStabilizer(
         tipVx = (tipVx - effOmega * tempX * dtSec) * decay
         tipVy = (tipVy - effOmega * tempY * dtSec) * decay
 
-        // Stage 3: Smooth noisy pressure sensor reports
+        // Stage 3: Smooth noisy pressure and 2D tilt vector without azimuth wraparound
         val tauPressure = 0.015f + 0.035f * level
         val alphaPressure = (1.0f - exp(-dtSec / tauPressure)).coerceIn(0.05f, 1.0f)
         smoothedPressure += alphaPressure * (rawPressure - smoothedPressure)
+
+        val rawTx = cTilt * kotlin.math.cos(rawOrientation)
+        val rawTy = cTilt * kotlin.math.sin(rawOrientation)
+        smoothedTiltX += alphaPressure * (rawTx - smoothedTiltX)
+        smoothedTiltY += alphaPressure * (rawTy - smoothedTiltY)
+        lastTilt = hypot(smoothedTiltX.toDouble(), smoothedTiltY.toDouble()).toFloat().coerceIn(0f, 1f)
+        lastOrientation = if (lastTilt > 0.01f) kotlin.math.atan2(smoothedTiltY, smoothedTiltX) else rawOrientation
+        lastSpeed = cSpeed
 
         lastRawX = rawX
         lastRawY = rawY
@@ -159,7 +196,10 @@ class StrokeStabilizer(
             y = tipY,
             pressure = smoothedPressure.coerceIn(0.01f, 1.0f),
             timeMillis = timeNanos / 1_000_000L,
-            timeNanos = timeNanos
+            timeNanos = timeNanos,
+            tilt = lastTilt,
+            orientation = lastOrientation,
+            speed = lastSpeed
         )
     }
 
@@ -168,22 +208,29 @@ class StrokeStabilizer(
      * Performs catch-up integration steps anchoring directly to the final release coordinate
      * so the tail of the stroke smoothly converges to the exact physical release point.
      */
-    fun finish(rawX: Float, rawY: Float, rawPressure: Float, timeNanos: Long): List<StrokePoint> {
+    fun finish(
+        rawX: Float,
+        rawY: Float,
+        rawPressure: Float,
+        timeNanos: Long,
+        rawTilt: Float = lastTilt,
+        rawOrientation: Float = lastOrientation,
+        rawSpeed: Float = lastSpeed
+    ): List<StrokePoint> {
         if (!hasStarted) {
-            return listOf(StrokePoint(rawX, rawY, rawPressure, timeNanos / 1_000_000L, timeNanos))
+            return listOf(StrokePoint(rawX, rawY, rawPressure, timeNanos / 1_000_000L, timeNanos, rawTilt, rawOrientation, rawSpeed))
         }
 
         val level = config.level.coerceIn(0.0f, 1.0f)
         if (!config.enabled || level <= 0.001f) {
             reset()
-            return listOf(StrokePoint(rawX, rawY, rawPressure, timeNanos / 1_000_000L, timeNanos))
+            return listOf(StrokePoint(rawX, rawY, rawPressure, timeNanos / 1_000_000L, timeNanos, rawTilt, rawOrientation, rawSpeed))
         }
 
         val remainingDist = hypot((rawX - tipX).toDouble(), (rawY - tipY).toDouble()).toFloat()
         val result = mutableListOf<StrokePoint>()
 
         if (remainingDist > 0.5f) {
-            // Rapid catch-up integration towards the exact release point
             val catchupOmega = 120.0f
             val substepDt = 0.006f
             val steps = if (remainingDist > 4.0f) 3 else 2
@@ -206,7 +253,10 @@ class StrokeStabilizer(
                         y = tipY,
                         pressure = smoothedPressure.coerceIn(0.01f, 1.0f),
                         timeMillis = tNanos / 1_000_000L,
-                        timeNanos = tNanos
+                        timeNanos = tNanos,
+                        tilt = lastTilt,
+                        orientation = lastOrientation,
+                        speed = lastSpeed
                     )
                 )
             }
@@ -218,7 +268,10 @@ class StrokeStabilizer(
             y = rawY,
             pressure = rawPressure.coerceIn(0.01f, 1.0f),
             timeMillis = timeNanos / 1_000_000L,
-            timeNanos = timeNanos
+            timeNanos = timeNanos,
+            tilt = rawTilt.coerceIn(0f, 1f),
+            orientation = rawOrientation,
+            speed = rawSpeed.coerceIn(0f, 1f)
         )
         result.add(endPoint)
 
@@ -243,5 +296,10 @@ class StrokeStabilizer(
         tipVx = 0f
         tipVy = 0f
         smoothedPressure = 0.5f
+        smoothedTiltX = 0f
+        smoothedTiltY = 0f
+        lastTilt = 0f
+        lastOrientation = 0f
+        lastSpeed = 0f
     }
 }

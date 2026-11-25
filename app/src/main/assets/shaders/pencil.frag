@@ -1,14 +1,18 @@
 #version 300 es
 precision highp float;
 
-in highp vec2 v_normal;
+in highp vec2 v_worldPos;
+in highp vec2 v_segStart;
+in highp vec2 v_segEnd;
+in highp vec4 v_radii;
 in highp vec4 v_color;
 in highp float v_tone;
-in highp vec2 v_worldPos;
+in highp vec4 v_trims;
+in highp vec3 v_nib;
 in highp vec2 v_toothCoord;
 in highp vec2 v_toothCoordRot;
 
-uniform sampler2D u_ToothTexture;
+uniform sampler2D u_ToothTexture; // R = coarse paper tooth, G = fine cellulose fibers
 
 uniform float u_BleedRatio;
 uniform float u_BleedPower;
@@ -22,7 +26,6 @@ uniform int u_InvertColors;
 uniform float u_InkDilution;
 uniform float u_FiberFeathering;
 uniform float u_MeniscusRim;
-uniform float u_WetSheen;
 uniform float u_ChromaHalo;
 
 // Finalized Paper Tooth Shader Constants (Velvet Soft)
@@ -41,84 +44,137 @@ vec3 getUndertone(vec3 base) {
 }
 
 void main() {
-    // 1. Screen-space pixel derivatives of dab normal (evaluated uniformly across fragment quad)
-    vec2 dX = dFdx(v_normal);
-    vec2 dY = dFdy(v_normal);
-    float delta = sqrt(0.5 * (dot(dX, dX) + dot(dY, dY)));
+    // 1. Evaluate world pixel derivatives before branching or discard (uniform across 2x2 helper quad)
+    vec2 dxWorld = dFdx(v_worldPos);
+    vec2 dyWorld = dFdy(v_worldPos);
+    float pxToWorld = sqrt(0.5 * (dot(dxWorld, dxWorld) + dot(dyWorld, dyWorld)));
 
-    float distSq = dot(v_normal, v_normal);
-    if (distSq > 1.0) discard;
-    float dist = sqrt(distSq);
+    // 2. Half-space joint partitioning to guarantee zero intra-stroke overlap across adjacent segments
+    vec2 p0 = v_worldPos - v_segStart;
+    vec2 p1 = v_worldPos - v_segEnd;
+    if (dot(v_trims.xy, v_trims.xy) > 0.25 && dot(p0, v_trims.xy) < 0.0) discard;
+    if (dot(v_trims.zw, v_trims.zw) > 0.25 && dot(p1, v_trims.zw) >= 0.0) discard;
 
+    // 3. Tapered Capsule SDF along [v_segStart, v_segEnd]
+    vec2 ba = v_segEnd - v_segStart;
+    float baLenSq = dot(ba, ba);
+    float h = (baLenSq > 1e-6) ? clamp(dot(p0, ba) / baLenSq, 0.0, 1.0) : 0.0;
+    vec2 dVec = p0 - ba * h;
+
+    float R = max(mix(v_radii.x, v_radii.y, h), 1e-4);
+    float rNom = max(mix(v_radii.z, v_radii.w, h), 1e-4);
+
+    // 4. Stylus tilt anisotropy (stub/chisel nib for fountain pen, broadside shading for graphite)
+    float tilt = clamp(v_nib.z, 0.0, 1.0);
+    vec2 nibDir = (dot(v_nib.xy, v_nib.xy) > 0.01) ? normalize(v_nib.xy) : vec2(1.0, 0.0);
+    vec2 nibPerp = vec2(-nibDir.y, nibDir.x);
+
+    float rawDistWorld;
+    if (tilt > 0.01 && v_tone < 2.5) {
+        // Broadside graphite contact ellipse expands wider with tilt
+        float alongTilt = dot(dVec, nibDir);
+        float acrossTilt = dot(dVec, nibPerp);
+        rawDistWorld = length(vec2(
+            alongTilt / (1.0 + 1.15 * tilt),
+            acrossTilt / (1.0 + 0.35 * tilt)
+        ));
+    } else if (tilt > 0.01 && v_tone < 5.0) {
+        // Stub / chisel fountain pen nib anisotropy
+        float alongNib = dot(dVec, nibDir);
+        float acrossNib = dot(dVec, nibPerp);
+        rawDistWorld = length(vec2(
+            alongNib / (1.0 - 0.30 * tilt),
+            acrossNib / (1.0 + 0.16 * tilt)
+        ));
+    } else {
+        rawDistWorld = length(dVec);
+    }
+
+    float dist = rawDistWorld / R;
+    if (dist > 1.0) discard;
+
+    float delta = pxToWorld / R;
     float distFromEdge = 1.0 - dist;
     float finalAlpha;
-    vec3 outRgb = v_color.rgb;
+
+    // Resolve base display color in output color space BEFORE rim shading so dark mode
+    // concentrates meniscus contrast accurately instead of inverting into a bright fringe.
+    vec3 displayBase = (u_InvertColors != 0) ? (vec3(1.0) - v_color.rgb) : v_color.rgb;
+    vec3 outRgb = displayBase;
 
     if (v_tone < 2.5) {
         // --- GRAPHITE PENCIL LEAD ---
-        // Crisp 1.25 physical screen pixel analytical anti-aliasing
         float aaWidth = max(delta * 1.25, 1e-4);
         float t = clamp(distFromEdge / aaWidth, 0.0, 1.0);
         float aaEdge = t * t * (3.0 - 2.0 * t);
 
-        float edgeFalloff = smoothstep(1.0, 0.35, dist);
+        float edgeFalloff = smoothstep(1.0, 0.32, dist);
 
-        // Continuous organic paper tooth noise with pre-interpolated dual-sampled UVs (zero per-pixel matrix math)
-        float grain1 = texture(u_ToothTexture, v_toothCoord).r;
-        float grain2 = texture(u_ToothTexture, v_toothCoordRot).r;
-        float grain = mix(grain1, grain2, DUAL_SAMPLE_MIX);
+        // Multi-scale RG paper tooth + fine cellulose fibers
+        vec2 texA = texture(u_ToothTexture, v_toothCoord).rg;
+        vec2 texB = texture(u_ToothTexture, v_toothCoordRot).rg;
+        float coarseGrain = mix(texA.r, texB.r, DUAL_SAMPLE_MIX);
+        float fineGrain = mix(texA.g, texB.g, 0.40);
+        float grain = mix(coarseGrain, fineGrain, 0.22);
 
         float density = clamp(v_tone, 0.0, 1.0);
+        float tiltFade = 1.0 - 0.38 * tilt;
+        float effBaseAlpha = v_color.a * tiltFade;
 
-        float minThreshold = mix(0.18, 0.13, density);
-        float maxThreshold = mix(0.55, 0.48, density);
-        float toothThreshold = mix(maxThreshold, minThreshold, v_color.a);
+        float minThreshold = mix(0.20, 0.14, density);
+        float maxThreshold = mix(0.58, 0.50, density);
+        float toothThreshold = mix(maxThreshold, minThreshold, effBaseAlpha);
         float toothWidth = mix(TOOTH_SHARPNESS * 1.1, TOOTH_SHARPNESS * 0.95, density);
 
         float toothAbrasion = smoothstep(toothThreshold - toothWidth, toothThreshold + toothWidth, grain);
         float effectiveAbrasion = mix(1.0, toothAbrasion, TOOTH_BITE);
-        finalAlpha = v_color.a * edgeFalloff * effectiveAbrasion * aaEdge;
+        finalAlpha = effBaseAlpha * edgeFalloff * effectiveAbrasion * aaEdge;
     } else if (v_tone < 5.0) {
         // --- FOUNTAIN PEN LIQUID INK ---
-        // Outward capillary ink bleed into paper fibers:
-        // v_tone encodes (3.0 + nominalRatio), where nominalRatio = R_nominal / R_quad in [0.05, 0.95].
-        float nominalDist = clamp(v_tone - 3.0, 0.05, 0.95);
+        float nominalDist = clamp(rNom / R, 0.05, 0.96);
         float safeDelta = max(delta, 1e-4);
 
-        // Core shift: relative fraction of nominal stroke radius
+        // Dwell factor carried in v_color.a (slow corners > 1.0 pool slightly darker & bleed wider; fast < 1.0 crisp)
+        float dwellFactor = clamp(v_color.a, 0.80, 1.25);
+        float dwellNorm = clamp((dwellFactor - 0.88) / 0.28, 0.0, 1.0);
+
         float coreShiftDist = nominalDist * u_CoreShiftRatio;
         float effectiveNominalDist = clamp(nominalDist + coreShiftDist, 0.01, 0.98);
 
-        // 1. Fiber Feathering along paper grain (using pre-interpolated UVs)
-        float paperGrain = texture(u_ToothTexture, v_toothCoord).r;
+        // 1. Multi-scale Fiber Feathering (coarse paper tooth + fine directional cellulose fibers)
+        vec2 inkTexA = texture(u_ToothTexture, v_toothCoord).rg;
+        float fineFiber = texture(u_ToothTexture, v_toothCoordRot * 1.45).g;
+        float paperGrain = mix(inkTexA.r, mix(inkTexA.g, fineFiber, 0.55), 0.55);
+
         float fiberPerturb = (paperGrain - 0.5) * u_FiberFeathering * effectiveNominalDist;
         float perturbedDist = dist + fiberPerturb;
 
         float distFromNominal = perturbedDist - effectiveNominalDist;
 
-        // Tunable wet ink dilution
-        float coreAlpha = v_color.a * u_InkDilution;
+        // Tunable wet ink dilution modulated by stylus dwell
+        float coreAlpha = clamp(u_InkDilution * dwellFactor, 0.02, 1.0);
 
         if (distFromNominal <= 0.0) {
-            // Inside nominal core
             float coreRatio = clamp(perturbedDist / effectiveNominalDist, 0.0, 1.0);
 
             // Meniscus surface-tension rim darkening (Coffee-ring effect)
-            float rimDarkening = smoothstep(0.65, 0.98, coreRatio) * u_MeniscusRim;
-            finalAlpha = coreAlpha * (1.0 + rimDarkening * 0.55);
-            outRgb = mix(outRgb, outRgb * 0.70, rimDarkening * 0.40);
-
-            // Wet liquid specular sheen along centerline disabled for subtractive ink to prevent core washout
+            float rimDarkening = smoothstep(0.62, 0.98, coreRatio) * u_MeniscusRim;
+            finalAlpha = clamp(coreAlpha * (1.0 + rimDarkening * 0.45), 0.0, 1.0);
+            if (u_InvertColors == 0) {
+                outRgb = mix(displayBase, displayBase * 0.70, rimDarkening * 0.40);
+            } else {
+                // Dark paper: enrich/saturate edge gently without brightening into a white glow
+                outRgb = mix(displayBase, displayBase * 0.84, rimDarkening * 0.35);
+            }
         } else {
-            // Relative bleed width: fraction of nominal stroke radius
+            // Capillary bleed modulated gently by stylus dwell at corners/terminations
+            float dwellBleedRatio = max(u_BleedRatio, 0.0) * mix(0.86, 1.18, dwellNorm);
             float maxBleed = max(1.0 - effectiveNominalDist - safeDelta * 0.5, 1e-4);
-            float bleedWidth = min(effectiveNominalDist * max(u_BleedRatio, 0.0), maxBleed);
+            float bleedWidth = min(effectiveNominalDist * dwellBleedRatio, maxBleed);
 
-            // Sub-pixel AA band width in dab coordinates
             float aaBand = max(safeDelta * u_AaWidth, 1e-4);
 
             if (bleedWidth <= aaBand * 0.5) {
-                // Virtually zero bleed: crisp analytical sub-pixel edge anti-aliasing
                 float t = clamp((effectiveNominalDist - perturbedDist) / aaBand + 1.0, 0.0, 1.0);
                 float smoothAa = t * t * (3.0 - 2.0 * t);
                 finalAlpha = coreAlpha * smoothAa;
@@ -130,21 +186,22 @@ void main() {
                     float t = 1.0 - u;
                     float bleedFalloff = pow(max(t, 0.0), max(u_BleedPower, 0.1)) * u_BleedBaseOpacity;
 
-                    // Smooth outer edge anti-aliasing in screen pixels
                     float distFromBleedEdge = bleedWidth - distFromNominal;
                     float aaEdge = clamp(distFromBleedEdge / aaBand, 0.0, 1.0);
                     float smoothAa = aaEdge * aaEdge * (3.0 - 2.0 * aaEdge);
 
-                    // Paper tooth grain mix
                     if (u_PaperGrainMix > 0.001) {
-                        float toothFactor = mix(1.0, smoothstep(0.2, 0.8, paperGrain), u_PaperGrainMix);
+                        float macroTooth = smoothstep(0.18, 0.82, mix(inkTexA.r, fineFiber, 0.35));
+                        float toothFactor = mix(1.0, macroTooth, u_PaperGrainMix);
                         bleedFalloff *= toothFactor;
                     }
 
-                    // Chromatographic dye separation halo at fringe
                     if (u_ChromaHalo > 0.001) {
                         vec3 undertone = getUndertone(v_color.rgb);
-                        outRgb = mix(outRgb, undertone, u_ChromaHalo * pow(u, 1.5));
+                        if (u_InvertColors != 0) {
+                            undertone = vec3(1.0) - undertone;
+                        }
+                        outRgb = mix(displayBase, undertone, u_ChromaHalo * pow(u, 1.5));
                     }
 
                     finalAlpha = coreAlpha * bleedFalloff * smoothAa;
@@ -153,19 +210,13 @@ void main() {
         }
     } else {
         // --- SOLID CONTINUOUS HIGHLIGHTER ---
-        // Clean, uniform stroke with cubic Hermite analytical sub-pixel anti-aliased edge
         float aaWidth = max(delta * 1.25, 1e-4);
         float t = clamp((1.0 - dist) / aaWidth, 0.0, 1.0);
         float aaEdge = t * t * (3.0 - 2.0 * t);
         finalAlpha = v_color.a * aaEdge;
-        outRgb = v_color.rgb;
     }
 
     if (finalAlpha <= 0.0001) discard;
-
-    if (u_InvertColors != 0) {
-        outRgb = vec3(1.0) - outRgb;
-    }
 
     // Premultiplied alpha output
     fragColor = vec4(outRgb * finalAlpha, finalAlpha);

@@ -25,7 +25,7 @@ pub extern "system" fn Java_app_goodboy13_bignotes_core_geometry_NativeStrokeTes
         return std::ptr::null_mut();
     }
 
-    let required_floats = (point_count as usize) * 3;
+    let required_floats = (point_count as usize) * 6;
     let mut raw_points = vec![0.0f32; required_floats];
 
     if env
@@ -36,8 +36,10 @@ pub extern "system" fn Java_app_goodboy13_bignotes_core_geometry_NativeStrokeTes
     }
 
     let mut points = Vec::with_capacity(point_count as usize);
-    for chunk in raw_points.chunks_exact(3) {
-        points.push(StrokePoint::new(chunk[0], chunk[1], chunk[2], 0));
+    for chunk in raw_points.chunks_exact(6) {
+        points.push(StrokePoint::with_dynamics(
+            chunk[0], chunk[1], chunk[2], 0, chunk[3], chunk[4], chunk[5],
+        ));
     }
 
     let is_ink_bool = is_ink == JNI_TRUE;
@@ -75,7 +77,7 @@ pub extern "system" fn Java_app_goodboy13_bignotes_core_geometry_NativeStrokeTes
 mod tests {
     use super::*;
     use crate::spline::CatmullRomSpline;
-    use crate::tessellator::{FLOATS_PER_VERTEX, VERTICES_PER_DAB};
+    use crate::tessellator::{FLOATS_PER_SEGMENT, FLOATS_PER_VERTEX, VERTICES_PER_SEGMENT};
 
     #[test]
     fn test_empty_stroke() {
@@ -87,10 +89,10 @@ mod tests {
     fn test_single_point_stroke() {
         let pts = vec![StrokePoint::new(10.0, 20.0, 0.5, 0)];
         let out = tessellate_stroke(&pts, 5.0, 0xFF000000, true, false, 0.25);
-        // Single point produces 1 dab = 6 vertices * 10 floats = 60 floats
-        assert_eq!(out.len(), VERTICES_PER_DAB * FLOATS_PER_VERTEX);
-        assert_eq!(out[0], 10.0);
-        assert_eq!(out[1], 20.0);
+        // Single point produces 1 capsule dot = 6 vertices * 22 floats = 132 floats
+        assert_eq!(out.len(), VERTICES_PER_SEGMENT * FLOATS_PER_VERTEX);
+        assert_eq!(out[2], 10.0);
+        assert_eq!(out[3], 20.0);
     }
 
     #[test]
@@ -100,8 +102,7 @@ mod tests {
             StrokePoint::new(10.0, 0.0, 0.5, 0),
         ];
         let out = tessellate_stroke(&pts, 5.0, 0xFF000000, true, false, 0.25);
-        assert!(!out.is_empty());
-        assert_eq!(out.len() % (VERTICES_PER_DAB * FLOATS_PER_VERTEX), 0);
+        assert_eq!(out.len(), FLOATS_PER_SEGMENT);
     }
 
     #[test]

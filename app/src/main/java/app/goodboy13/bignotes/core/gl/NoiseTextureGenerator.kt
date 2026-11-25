@@ -114,10 +114,71 @@ object NoiseTextureGenerator {
     }
 
     /**
-     * Generates a seamless 512x512 paper tooth texture and uploads it to an OpenGL 2D texture.
+     * Generates an interleaved RG8 buffer packing coarse paper tooth (R) and fine
+     * cellulose fiber streaks (G) for multi-scale shading and zoom-stable mipmaps.
+     */
+    fun generateMultiScaleRgNoise(): ByteArray {
+        val pixelCount = TEXTURE_SIZE * TEXTURE_SIZE
+        val coarseBuf = FloatArray(pixelCount)
+        val fiberBuf = FloatArray(pixelCount)
+        var minC = Float.MAX_VALUE
+        var maxC = -Float.MAX_VALUE
+        var minF = Float.MAX_VALUE
+        var maxF = -Float.MAX_VALUE
+
+        for (y in 0 until TEXTURE_SIZE) {
+            val v = y.toFloat() / TEXTURE_SIZE
+            for (x in 0 until TEXTURE_SIZE) {
+                val u = x.toFloat() / TEXTURE_SIZE
+
+                // R: Coarse paper tooth (8, 16, 32, 64 octaves)
+                var coarse = 0f
+                var ampC = 0.45f
+                var freqC = 8
+                for (octave in 0 until 4) {
+                    coarse += seamlessNoise(u * freqC, v * freqC, freqC, freqC) * ampC
+                    ampC *= 0.50f
+                    freqC *= 2
+                }
+
+                // G: High-frequency cellulose fibers with crossed directional periodicity
+                val f1 = seamlessNoise(u * 24f, v * 96f, 24, 96) * 0.42f
+                val f2 = seamlessNoise(u * 96f + 0.31f, v * 24f + 0.17f, 96, 24) * 0.42f
+                val f3 = seamlessNoise(u * 128f, v * 128f, 128, 128) * 0.25f
+                val f4 = seamlessNoise(u * 256f, v * 256f, 256, 256) * 0.15f
+                val fiber = f1 + f2 + f3 + f4
+
+                val idx = y * TEXTURE_SIZE + x
+                coarseBuf[idx] = coarse
+                fiberBuf[idx] = fiber
+                if (coarse < minC) minC = coarse
+                if (coarse > maxC) maxC = coarse
+                if (fiber < minF) minF = fiber
+                if (fiber > maxF) maxF = fiber
+            }
+        }
+
+        val rangeC = (maxC - minC).coerceAtLeast(1e-4f)
+        val rangeF = (maxF - minF).coerceAtLeast(1e-4f)
+        val rg = ByteArray(pixelCount * 2)
+        for (i in 0 until pixelCount) {
+            var normC = ((coarseBuf[i] - minC) / rangeC).coerceIn(0f, 1f)
+            normC = normC * normC * (3f - 2f * normC)
+            var normF = ((fiberBuf[i] - minF) / rangeF).coerceIn(0f, 1f)
+            normF = normF * normF * (3f - 2f * normF)
+
+            rg[i * 2] = (normC * 255f).toInt().toByte()
+            rg[i * 2 + 1] = (normF * 255f).toInt().toByte()
+        }
+        return rg
+    }
+
+    /**
+     * Generates a seamless 512x512 multi-scale RG8 paper tooth + cellulose fiber texture
+     * with mipmaps for zoom-invariant sharpness.
      */
     fun createPaperToothTexture(): Int {
-        val rawData = generateRawNoise()
+        val rawData = generateMultiScaleRgNoise()
         val buffer = ByteBuffer.allocateDirect(rawData.size).order(ByteOrder.nativeOrder())
         buffer.put(rawData)
         buffer.position(0)
@@ -129,20 +190,21 @@ object NoiseTextureGenerator {
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textureId)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_REPEAT)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_REPEAT)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR_MIPMAP_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
 
         GLES30.glTexImage2D(
             GLES30.GL_TEXTURE_2D,
             0,
-            GLES30.GL_R8,
+            GLES30.GL_RG8,
             TEXTURE_SIZE,
             TEXTURE_SIZE,
             0,
-            GLES30.GL_RED,
+            GLES30.GL_RG,
             GLES30.GL_UNSIGNED_BYTE,
             buffer
         )
+        GLES30.glGenerateMipmap(GLES30.GL_TEXTURE_2D)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
 
         return textureId

@@ -1,87 +1,68 @@
-use crate::dabs::DabGenerator;
 use crate::spline::{CatmullRomSpline, StrokePoint};
 
-pub const FLOATS_PER_VERTEX: usize = 10;
-pub const VERTICES_PER_DAB: usize = 6;
-pub const FLOATS_PER_DAB: usize = VERTICES_PER_DAB * FLOATS_PER_VERTEX;
+pub const FLOATS_PER_VERTEX: usize = 22;
+pub const VERTICES_PER_SEGMENT: usize = 6;
+pub const FLOATS_PER_SEGMENT: usize = VERTICES_PER_SEGMENT * FLOATS_PER_VERTEX;
 
-#[allow(dead_code)]
 #[inline(always)]
 fn put_vertex(
     out: &mut [f32],
     offset: usize,
     x: f32,
     y: f32,
-    nx: f32,
-    ny: f32,
-    radius: f32,
+    s0x: f32,
+    s0y: f32,
+    s1x: f32,
+    s1y: f32,
+    r0: f32,
+    r1: f32,
+    r_nom0: f32,
+    r_nom1: f32,
     r: f32,
     g: f32,
     b: f32,
     a: f32,
     tone: f32,
+    m0x: f32,
+    m0y: f32,
+    m1x: f32,
+    m1y: f32,
+    nib_x: f32,
+    nib_y: f32,
+    tilt: f32,
 ) {
     out[offset] = x;
     out[offset + 1] = y;
-    out[offset + 2] = nx;
-    out[offset + 3] = ny;
-    out[offset + 4] = radius;
-    out[offset + 5] = r;
-    out[offset + 6] = g;
-    out[offset + 7] = b;
-    out[offset + 8] = a;
-    out[offset + 9] = tone;
-}
-
-#[cfg(target_arch = "aarch64")]
-#[inline(always)]
-unsafe fn emit_dab_quad_neon(
-    out_ptr: *mut f32,
-    x: f32,
-    y: f32,
-    radius: f32,
-    r: f32,
-    g: f32,
-    b: f32,
-    alpha: f32,
-    tone: f32,
-) {
-    use std::arch::aarch64::*;
-
-    let attr_rad_rgb = vld1q_f32([radius, r, g, b].as_ptr());
-    let attr_alpha_tone = vld1_f32([alpha, tone].as_ptr());
-
-    const NORMALS: [(f32, f32); 6] = [
-        (-1.0, -1.0),
-        (1.0, -1.0),
-        (1.0, 1.0),
-        (-1.0, -1.0),
-        (1.0, 1.0),
-        (-1.0, 1.0),
-    ];
-
-    for (i, &(nx, ny)) in NORMALS.iter().enumerate() {
-        let v_ptr = out_ptr.add(i * FLOATS_PER_VERTEX);
-        let xy_nx_ny = vld1q_f32([x, y, nx, ny].as_ptr());
-        vst1q_f32(v_ptr, xy_nx_ny);
-        vst1q_f32(v_ptr.add(4), attr_rad_rgb);
-        vst1_f32(v_ptr.add(8), attr_alpha_tone);
-    }
+    out[offset + 2] = s0x;
+    out[offset + 3] = s0y;
+    out[offset + 4] = s1x;
+    out[offset + 5] = s1y;
+    out[offset + 6] = r0;
+    out[offset + 7] = r1;
+    out[offset + 8] = r_nom0;
+    out[offset + 9] = r_nom1;
+    out[offset + 10] = r;
+    out[offset + 11] = g;
+    out[offset + 12] = b;
+    out[offset + 13] = a;
+    out[offset + 14] = tone;
+    out[offset + 15] = m0x;
+    out[offset + 16] = m0y;
+    out[offset + 17] = m1x;
+    out[offset + 18] = m1y;
+    out[offset + 19] = nib_x;
+    out[offset + 20] = nib_y;
+    out[offset + 21] = tilt;
 }
 
 #[inline]
-pub fn get_step_distance(base_width: f32, is_ink: bool, is_highlighter: bool) -> f32 {
+pub fn get_spline_step(base_width: f32, is_ink: bool, is_highlighter: bool) -> f32 {
     if is_highlighter {
-        let nominal_radius = 5.0f32.max(base_width * 2.5);
-        3.0f32.max(nominal_radius * 0.35)
+        3.0f32.max(base_width * 0.65)
     } else if is_ink {
-        let eff_radius = 0.6f32.max(base_width * 0.25);
-        let step = eff_radius * 0.35;
-        0.28f32.max(step.min(1.6))
+        1.5f32.max(base_width * 0.35).min(6.0)
     } else {
-        let eff_radius = 0.7f32.max(base_width * 0.30);
-        let step = eff_radius * 0.35;
-        0.30f32.max(step.min(1.8))
+        1.6f32.max(base_width * 0.38).min(6.5)
     }
 }
 
@@ -98,7 +79,7 @@ pub fn resolve_color(color_rgb: i64, is_ink: bool, is_highlighter: bool) -> (f32
     } else {
         let lightness = 0.299 * r + 0.587 * g + 0.114 * b;
         let density = (1.0 - lightness).clamp(0.0, 1.0);
-        let base_alpha = (0.24 + 0.15 * density) * opacity_multiplier;
+        let base_alpha = (0.56 + 0.28 * density) * opacity_multiplier;
         (r, g, b, base_alpha)
     }
 }
@@ -122,37 +103,134 @@ pub fn get_ink_radius(pressure: f32, base_width: f32) -> f32 {
     min_radius.max(base_radius * radius_factor)
 }
 
-pub fn generate_dabs(
-    points: &[StrokePoint],
+#[inline]
+fn compute_radii_tone(
+    pressure: f32,
+    tilt: f32,
     base_width: f32,
+    graphite_tone_id: f32,
     is_ink: bool,
     is_highlighter: bool,
-) -> Vec<StrokePoint> {
-    if points.is_empty() {
-        return Vec::new();
-    }
-    let step_distance = get_step_distance(base_width, is_ink, is_highlighter);
-
-    let smoothed_points = if points.len() >= 3 {
-        let step_dist = if is_highlighter {
-            2.0f32.max(base_width * 0.60)
-        } else {
-            0.8f32.max(base_width * 0.20)
-        };
-        CatmullRomSpline::interpolate(points, step_dist)
+    quad_margin_ratio: f32,
+) -> (f32, f32, f32) {
+    if is_highlighter {
+        let nominal_r = (base_width * 2.5 * (0.88 + 0.12 * pressure)).max(6.0);
+        (nominal_r, nominal_r, 5.5)
+    } else if is_ink {
+        let nominal_r = get_ink_radius(pressure, base_width);
+        let aniso_margin_scale = 1.0 + 0.20 * tilt.clamp(0.0, 1.0);
+        let extra_margin = (nominal_r * quad_margin_ratio).max(0.75);
+        let quad_r = (nominal_r + extra_margin) * aniso_margin_scale;
+        (quad_r, nominal_r, 3.5)
     } else {
-        points.to_vec()
+        let p = pressure.clamp(0.0, 1.0);
+        let nominal_r = (base_width * (0.32 + 0.68 * p) * 0.5).max(0.8);
+        (nominal_r, nominal_r, graphite_tone_id)
+    }
+}
+
+#[inline]
+fn compute_point_alpha(
+    pressure: f32,
+    speed: f32,
+    base_alpha: f32,
+    is_ink: bool,
+    is_highlighter: bool,
+) -> f32 {
+    if is_highlighter {
+        base_alpha
+    } else if is_ink {
+        (1.14 - 0.24 * speed.clamp(0.0, 1.0)).clamp(0.86, 1.18)
+    } else {
+        let p = pressure.clamp(0.0, 1.0);
+        (base_alpha * (0.20 + 0.80 * p)).clamp(0.06, 0.90)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_segment_quad(
+    out: &mut [f32],
+    offset: usize,
+    p0: StrokePoint,
+    p1: StrokePoint,
+    m0x: f32,
+    m0y: f32,
+    m1x: f32,
+    m1y: f32,
+    base_width: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+    base_alpha: f32,
+    graphite_tone_id: f32,
+    is_ink: bool,
+    is_highlighter: bool,
+    quad_margin_ratio: f32,
+) {
+    let (r0, r_nom0, tone0) = compute_radii_tone(
+        p0.pressure, p0.tilt, base_width, graphite_tone_id, is_ink, is_highlighter, quad_margin_ratio,
+    );
+    let (r1, r_nom1, _) = compute_radii_tone(
+        p1.pressure, p1.tilt, base_width, graphite_tone_id, is_ink, is_highlighter, quad_margin_ratio,
+    );
+    let avg_alpha = 0.5
+        * (compute_point_alpha(p0.pressure, p0.speed, base_alpha, is_ink, is_highlighter)
+            + compute_point_alpha(p1.pressure, p1.speed, base_alpha, is_ink, is_highlighter));
+
+    let max_tilt = if is_highlighter {
+        0.0
+    } else {
+        p0.tilt.max(p1.tilt).clamp(0.0, 1.0)
+    };
+    let (nib_x, nib_y) = if !is_highlighter && (p0.tilt > 0.005 || p1.tilt > 0.005) {
+        let vx = p0.tilt * p0.orientation.cos() + p1.tilt * p1.orientation.cos();
+        let vy = p0.tilt * p0.orientation.sin() + p1.tilt * p1.orientation.sin();
+        let m = vx.hypot(vy);
+        if m > 1e-5 {
+            (vx / m, vy / m)
+        } else {
+            (1.0, 0.0)
+        }
+    } else {
+        (1.0, 0.0)
     };
 
-    let mut gen = DabGenerator::new(step_distance);
-    let mut dabs = Vec::with_capacity(smoothed_points.len() * 4);
-    if let Some(first) = smoothed_points.first() {
-        gen.start(first.x, first.y, first.pressure, &mut dabs);
-    }
-    for pt in smoothed_points.iter().skip(1) {
-        gen.add_point(pt.x, pt.y, pt.pressure, &mut dabs);
-    }
-    dabs
+    let aniso_pad = if is_highlighter {
+        1.0
+    } else if is_ink {
+        1.0 + 0.22 * max_tilt
+    } else {
+        1.0 + 1.25 * max_tilt
+    };
+    let quad_pad = r0.max(r1) * aniso_pad + 0.5;
+
+    let dx = p1.x - p0.x;
+    let dy = p1.y - p0.y;
+    let len = dx.hypot(dy);
+    let (ux, uy) = if len > 1e-4 {
+        (dx / len, dy / len)
+    } else {
+        (1.0, 0.0)
+    };
+    let nx = -uy;
+    let ny = ux;
+
+    let c0x = p0.x - ux * quad_pad - nx * quad_pad;
+    let c0y = p0.y - uy * quad_pad - ny * quad_pad;
+    let c1x = p1.x + ux * quad_pad - nx * quad_pad;
+    let c1y = p1.y + uy * quad_pad - ny * quad_pad;
+    let c2x = p1.x + ux * quad_pad + nx * quad_pad;
+    let c2y = p1.y + uy * quad_pad + ny * quad_pad;
+    let c3x = p0.x - ux * quad_pad + nx * quad_pad;
+    let c3y = p0.y - uy * quad_pad + ny * quad_pad;
+
+    put_vertex(out, offset, c0x, c0y, p0.x, p0.y, p1.x, p1.y, r0, r1, r_nom0, r_nom1, r, g, b, avg_alpha, tone0, m0x, m0y, m1x, m1y, nib_x, nib_y, max_tilt);
+    put_vertex(out, offset + FLOATS_PER_VERTEX, c1x, c1y, p0.x, p0.y, p1.x, p1.y, r0, r1, r_nom0, r_nom1, r, g, b, avg_alpha, tone0, m0x, m0y, m1x, m1y, nib_x, nib_y, max_tilt);
+    put_vertex(out, offset + 2 * FLOATS_PER_VERTEX, c2x, c2y, p0.x, p0.y, p1.x, p1.y, r0, r1, r_nom0, r_nom1, r, g, b, avg_alpha, tone0, m0x, m0y, m1x, m1y, nib_x, nib_y, max_tilt);
+
+    put_vertex(out, offset + 3 * FLOATS_PER_VERTEX, c0x, c0y, p0.x, p0.y, p1.x, p1.y, r0, r1, r_nom0, r_nom1, r, g, b, avg_alpha, tone0, m0x, m0y, m1x, m1y, nib_x, nib_y, max_tilt);
+    put_vertex(out, offset + 4 * FLOATS_PER_VERTEX, c2x, c2y, p0.x, p0.y, p1.x, p1.y, r0, r1, r_nom0, r_nom1, r, g, b, avg_alpha, tone0, m0x, m0y, m1x, m1y, nib_x, nib_y, max_tilt);
+    put_vertex(out, offset + 5 * FLOATS_PER_VERTEX, c3x, c3y, p0.x, p0.y, p1.x, p1.y, r0, r1, r_nom0, r_nom1, r, g, b, avg_alpha, tone0, m0x, m0y, m1x, m1y, nib_x, nib_y, max_tilt);
 }
 
 pub fn tessellate_stroke(
@@ -166,60 +244,90 @@ pub fn tessellate_stroke(
     if points.is_empty() {
         return Vec::new();
     }
-    let dabs = generate_dabs(points, base_width, is_ink, is_highlighter);
-    if dabs.is_empty() {
-        return Vec::new();
+
+    let smoothed = if points.len() >= 3 {
+        let step_dist = get_spline_step(base_width, is_ink, is_highlighter);
+        CatmullRomSpline::interpolate(points, step_dist)
+    } else {
+        points.to_vec()
+    };
+
+    let mut cleaned = Vec::with_capacity(smoothed.len());
+    cleaned.push(smoothed[0]);
+    for pt in smoothed.iter().skip(1) {
+        let prev = cleaned[cleaned.len() - 1];
+        if (pt.x - prev.x).hypot(pt.y - prev.y) >= 0.15 {
+            cleaned.push(*pt);
+        }
     }
 
-    let total_vertices = dabs.len() * VERTICES_PER_DAB;
-    let mut out = vec![0.0f32; total_vertices * FLOATS_PER_VERTEX];
-
-    let tone_id = if is_highlighter {
+    let graphite_tone_id = if is_highlighter {
         5.5
     } else if is_ink {
-        3.0
+        3.5
     } else {
         get_graphite_density(color_rgb)
     };
-
     let (r, g, b, base_alpha) = resolve_color(color_rgb, is_ink, is_highlighter);
-    let mut offset = 0;
 
-    for pt in &dabs {
-        let (radius, alpha, dab_tone_id) = if is_highlighter {
-            let nominal_radius = (base_width * 2.5 * (0.88 + 0.12 * pt.pressure)).max(6.0);
-            (nominal_radius, base_alpha, 5.5)
-        } else if is_ink {
-            let nominal_radius = get_ink_radius(pt.pressure, base_width);
-            let extra_margin = (nominal_radius * quad_margin_ratio).max(0.6);
-            let quad_radius = nominal_radius + extra_margin;
-            let nominal_ratio = (nominal_radius / quad_radius).clamp(0.05, 0.95);
-            (quad_radius, 1.0, 3.0 + nominal_ratio)
+    if cleaned.len() == 1 {
+        let mut out = vec![0.0f32; FLOATS_PER_SEGMENT];
+        emit_segment_quad(
+            &mut out, 0, cleaned[0], cleaned[0], 0.0, 0.0, 0.0, 0.0,
+            base_width, r, g, b, base_alpha, graphite_tone_id, is_ink, is_highlighter, quad_margin_ratio,
+        );
+        return out;
+    }
+
+    let seg_count = cleaned.len() - 1;
+    let mut tangents_x = Vec::with_capacity(seg_count);
+    let mut tangents_y = Vec::with_capacity(seg_count);
+    for i in 0..seg_count {
+        let dx = cleaned[i + 1].x - cleaned[i].x;
+        let dy = cleaned[i + 1].y - cleaned[i].y;
+        let len = dx.hypot(dy).max(1e-4);
+        tangents_x.push(dx / len);
+        tangents_y.push(dy / len);
+    }
+
+    let mut miters_x = vec![0.0f32; cleaned.len()];
+    let mut miters_y = vec![0.0f32; cleaned.len()];
+    for j in 1..(cleaned.len() - 1) {
+        let sx = tangents_x[j - 1] + tangents_x[j];
+        let sy = tangents_y[j - 1] + tangents_y[j];
+        let m_len = sx.hypot(sy);
+        if m_len > 1e-4 {
+            miters_x[j] = sx / m_len;
+            miters_y[j] = sy / m_len;
         } else {
-            let p = pt.pressure.clamp(0.0, 1.0);
-            let radius = (base_width * (0.32 + 0.68 * p) * 0.5).max(0.8);
-            let alpha = (base_alpha * (0.12 + 0.88 * p)).clamp(0.02, 0.50);
-            (radius, alpha, tone_id)
-        };
-
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            emit_dab_quad_neon(out.as_mut_ptr().add(offset), pt.x, pt.y, radius, r, g, b, alpha, dab_tone_id);
+            miters_x[j] = tangents_x[j];
+            miters_y[j] = tangents_y[j];
         }
+    }
 
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            // 6 vertices per dab (2 triangles forming quad)
-            put_vertex(&mut out, offset, pt.x, pt.y, -1.0, -1.0, radius, r, g, b, alpha, dab_tone_id);
-            put_vertex(&mut out, offset + 10, pt.x, pt.y, 1.0, -1.0, radius, r, g, b, alpha, dab_tone_id);
-            put_vertex(&mut out, offset + 20, pt.x, pt.y, 1.0, 1.0, radius, r, g, b, alpha, dab_tone_id);
-
-            put_vertex(&mut out, offset + 30, pt.x, pt.y, -1.0, -1.0, radius, r, g, b, alpha, dab_tone_id);
-            put_vertex(&mut out, offset + 40, pt.x, pt.y, 1.0, 1.0, radius, r, g, b, alpha, dab_tone_id);
-            put_vertex(&mut out, offset + 50, pt.x, pt.y, -1.0, 1.0, radius, r, g, b, alpha, dab_tone_id);
-        }
-
-        offset += FLOATS_PER_DAB;
+    let mut out = vec![0.0f32; seg_count * FLOATS_PER_SEGMENT];
+    let mut offset = 0;
+    for i in 0..seg_count {
+        emit_segment_quad(
+            &mut out,
+            offset,
+            cleaned[i],
+            cleaned[i + 1],
+            miters_x[i],
+            miters_y[i],
+            miters_x[i + 1],
+            miters_y[i + 1],
+            base_width,
+            r,
+            g,
+            b,
+            base_alpha,
+            graphite_tone_id,
+            is_ink,
+            is_highlighter,
+            quad_margin_ratio,
+        );
+        offset += FLOATS_PER_SEGMENT;
     }
 
     out
