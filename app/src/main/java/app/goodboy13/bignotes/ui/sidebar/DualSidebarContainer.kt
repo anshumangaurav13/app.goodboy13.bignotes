@@ -9,14 +9,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.goodboy13.bignotes.ui.model.FolderItem
 import app.goodboy13.bignotes.ui.model.NoteItem
 import app.goodboy13.bignotes.ui.model.NoteSortOrder
-import app.goodboy13.bignotes.ui.theme.BigNotesMotion
-import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
+import kotlin.math.roundToInt
 
 object SidebarLayoutDefaults {
     fun folderWidth(screenWidthDp: Int, isPortrait: Boolean): Dp = when {
@@ -65,25 +67,22 @@ fun DualSidebarContainer(
     margin: app.goodboy13.bignotes.core.export.PdfMargin = app.goodboy13.bignotes.core.export.PdfMargin.NONE,
     getPageCount: ((NoteItem) -> Int)? = null,
     statusBarHeight: Dp = 0.dp,
+    foldersProgress: Float = if (isFoldersVisible) 1f else 0f,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val screenWidth = configuration.screenWidthDp
 
     val folderWidth = SidebarLayoutDefaults.folderWidth(screenWidth, isPortrait)
-    val totalWidth = SidebarLayoutDefaults.totalWidth(screenWidth, isPortrait, isFoldersVisible)
-
-    val reducedMotion = rememberReducedMotion()
+    val noteWidth = SidebarLayoutDefaults.noteWidth(screenWidth, isPortrait)
+    val clampedFoldersProgress = foldersProgress.coerceIn(0f, 1f)
     val containerShape = RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp)
 
     Surface(
         modifier = modifier
-            .fillMaxHeight()
-            .width(totalWidth)
-            .animateContentSize(
-                animationSpec = BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion)
-            ),
+            .fillMaxHeight(),
         shape = containerShape,
         shadowElevation = 8.dp,
         tonalElevation = 2.dp,
@@ -91,43 +90,57 @@ fun DualSidebarContainer(
         color = MaterialTheme.colorScheme.surface
     ) {
         Row(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxHeight()
         ) {
-            AnimatedVisibility(
-                visible = isFoldersVisible,
-                enter = expandHorizontally(BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion)) +
-                    fadeIn(BigNotesMotion.enterTween(180, reducedMotion)),
-                exit = shrinkHorizontally(BigNotesMotion.exitTween(180, reducedMotion)) +
-                    fadeOut(BigNotesMotion.exitTween(140, reducedMotion))
-            ) {
-                Row(modifier = Modifier.fillMaxHeight()) {
-                    // Folders Column
-                    FoldersSidebar(
-                        folders = folders,
-                        selectedFolderId = selectedFolderId,
-                        onFolderSelect = onFolderSelect,
-                        onFolderDelete = onFolderDelete,
-                        onFolderRename = onFolderRename,
-                        onAddFolder = onAddFolder,
-                        onToggleCollapse = onToggleFoldersVisible,
-                        onOpenSettings = onOpenSettings,
-                        isDarkMode = isDarkMode,
-                        onToggleDarkMode = onToggleDarkMode,
-                        statusBarHeight = statusBarHeight,
+            if (clampedFoldersProgress > 0.001f) {
+                val dividerWidth = 0.5.dp
+                val fullFolderPaneWidth = folderWidth + dividerWidth
+                val fullFolderPanePx = with(density) { fullFolderPaneWidth.toPx() }
+                Box(
+                    modifier = Modifier
+                        .width(fullFolderPaneWidth * clampedFoldersProgress)
+                        .fillMaxHeight()
+                        .clipToBounds()
+                ) {
+                    Row(
                         modifier = Modifier
-                            .width(folderWidth)
+                            .requiredWidth(fullFolderPaneWidth)
                             .fillMaxHeight()
-                    )
+                            .offset {
+                                IntOffset(
+                                    x = (-(1f - clampedFoldersProgress) * fullFolderPanePx).roundToInt(),
+                                    y = 0
+                                )
+                            }
+                    ) {
+                        // Folders Column (maintains fixed width so content never squishes while sliding)
+                        FoldersSidebar(
+                            folders = folders,
+                            selectedFolderId = selectedFolderId,
+                            onFolderSelect = onFolderSelect,
+                            onFolderDelete = onFolderDelete,
+                            onFolderRename = onFolderRename,
+                            onAddFolder = onAddFolder,
+                            onToggleCollapse = onToggleFoldersVisible,
+                            onOpenSettings = onOpenSettings,
+                            isDarkMode = isDarkMode,
+                            onToggleDarkMode = onToggleDarkMode,
+                            statusBarHeight = statusBarHeight,
+                            modifier = Modifier
+                                .width(folderWidth)
+                                .fillMaxHeight()
+                        )
 
-                    // Vertical divider between Folders and Notes
-                    VerticalDivider(
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
-                    )
+                        // Vertical divider between Folders and Notes
+                        VerticalDivider(
+                            thickness = dividerWidth,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
+                        )
+                    }
                 }
             }
 
-            // Notes Column
+            // Notes Column (fixed width so it slides cleanly without squishing)
             NotesSidebar(
                 notes = notes,
                 selectedNoteId = selectedNoteId,
@@ -152,7 +165,7 @@ fun DualSidebarContainer(
                 getPageCount = getPageCount,
                 statusBarHeight = statusBarHeight,
                 modifier = Modifier
-                    .weight(1f)
+                    .width(noteWidth)
                     .fillMaxHeight()
             )
         }

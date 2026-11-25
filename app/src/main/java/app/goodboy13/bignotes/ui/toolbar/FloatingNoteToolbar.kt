@@ -167,8 +167,8 @@ fun FloatingNoteToolbar(
     val animatedOffset by animateOffsetAsState(
         targetValue = if (isDragging) liveDragOffset else snappedTargetOffset,
         animationSpec = if (isDragging || reducedMotion) snap() else spring(
-            stiffness = Spring.StiffnessMediumLow,
-            dampingRatio = 0.78f
+            stiffness = Spring.StiffnessMedium,
+            dampingRatio = 0.82f
         ),
         label = "FloatingToolbarPositionAnimation"
     )
@@ -195,7 +195,7 @@ fun FloatingNoteToolbar(
             )
         }
 
-        // Floating Toolbar Pill
+        // Floating Toolbar Pill (animateContentSize lives inside Surface so shadowElevation is never clipped)
         Surface(
             shape = RoundedCornerShape(22.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
@@ -209,15 +209,17 @@ fun FloatingNoteToolbar(
                         animatedOffset.y.roundToInt()
                     )
                 }
-                .animateContentSize(
+                .onSizeChanged { toolbarSizePx = it }
+        ) {
+            Box(
+                modifier = Modifier.animateContentSize(
                     animationSpec = BigNotesMotion.tactileSpring(
                         dampingRatio = 0.82f,
                         stiffness = Spring.StiffnessMedium,
                         reducedMotion = reducedMotion
                     )
                 )
-                .onSizeChanged { toolbarSizePx = it }
-        ) {
+            ) {
             if (dockEdge.isHorizontal) {
                 // Horizontal Toolbar Layout (Top / Bottom)
                 Row(
@@ -712,6 +714,7 @@ fun FloatingNoteToolbar(
                         }
                     }
                 }
+            }
             }
         }
 

@@ -881,14 +881,28 @@ fun BigNotesMainScreen(
 
     val density = LocalDensity.current
     val reducedMotion = rememberReducedMotion()
-    val sidebarWidthDp = SidebarLayoutDefaults.totalWidth(configuration.screenWidthDp, isPortrait, isFoldersVisible)
-    val sidebarWidthPx = with(density) { sidebarWidthDp.toPx() }
+    val folderWidthDp = SidebarLayoutDefaults.folderWidth(configuration.screenWidthDp, isPortrait)
+    val noteWidthDp = SidebarLayoutDefaults.noteWidth(configuration.screenWidthDp, isPortrait)
+    val folderWidthPx = with(density) { (folderWidthDp + 0.5.dp).toPx() }
+    val noteWidthPx = with(density) { noteWidthDp.toPx() }
 
-    val animatedSidebarWidthPx by animateFloatAsState(
-        targetValue = if (isSidebarVisible) sidebarWidthPx else 0f,
-        animationSpec = BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion),
-        label = "sidebarWidth"
+    val drawerProgress by animateFloatAsState(
+        targetValue = if (isSidebarVisible) 1f else 0f,
+        animationSpec = if (isSidebarVisible) {
+            BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion)
+        } else {
+            BigNotesMotion.exitTween(180, reducedMotion)
+        },
+        label = "sidebarDrawerProgress"
     )
+    val foldersProgress by animateFloatAsState(
+        targetValue = if (isFoldersVisible) 1f else 0f,
+        animationSpec = BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion),
+        label = "sidebarFoldersProgress"
+    )
+
+    val currentTotalSidebarWidthPx = folderWidthPx * foldersProgress + noteWidthPx
+    val animatedSidebarWidthPx = currentTotalSidebarWidthPx * drawerProgress
     val animatedSidebarWidthDp = with(density) { animatedSidebarWidthPx.toDp() }
 
     val statusBarTopPx = WindowInsets.statusBars.getTop(density)
@@ -898,7 +912,11 @@ fun BigNotesMainScreen(
     }
     val animatedStatusBarDp by animateDpAsState(
         targetValue = if (isSidebarVisible) lastKnownStatusBarHeightDp else 0.dp,
-        animationSpec = BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion),
+        animationSpec = if (isSidebarVisible) {
+            BigNotesMotion.enterTween(BigNotesMotion.STANDARD_MS, reducedMotion)
+        } else {
+            BigNotesMotion.exitTween(180, reducedMotion)
+        },
         label = "statusBarHeight"
     )
 
@@ -1249,7 +1267,7 @@ fun BigNotesMainScreen(
         )
 
         // Dual Sidebar Overlay (smooth animated slide on top of canvas)
-        if (animatedSidebarWidthPx > 0f) {
+        if (drawerProgress > 0.001f) {
             DualSidebarContainer(
                 isVisible = true,
                 folders = folders,
@@ -1383,10 +1401,15 @@ fun BigNotesMainScreen(
                     }
                 },
                 statusBarHeight = animatedStatusBarDp,
+                foldersProgress = foldersProgress,
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(sidebarWidthDp)
-                    .offset { IntOffset(x = (animatedSidebarWidthPx - sidebarWidthPx).roundToInt(), y = 0) }
+                    .offset {
+                        IntOffset(
+                            x = (-(1f - drawerProgress) * currentTotalSidebarWidthPx).roundToInt(),
+                            y = 0
+                        )
+                    }
             )
         }
     }
