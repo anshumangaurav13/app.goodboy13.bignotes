@@ -377,6 +377,13 @@ fun BigNotesMainScreen(
     var selectedColorIndex by remember { mutableIntStateOf(initialColorIndex) }
     val initialHlColorIndex = remember { prefs.getInt("selected_highlighter_color_idx", 0) }
     var selectedHighlighterColorIndex by remember { mutableIntStateOf(initialHlColorIndex) }
+    var customInkColorRgb by remember {
+        mutableLongStateOf(prefs.getLong("custom_ink_color_rgb", InkPalette.DEFAULT_CUSTOM_INK_RGB))
+    }
+    var customHighlighterColorRgb by remember {
+        mutableLongStateOf(prefs.getLong("custom_highlighter_color_rgb", InkPalette.DEFAULT_CUSTOM_HIGHLIGHTER_RGB))
+    }
+    var toolBeforeEyedropper by remember { mutableStateOf(ActiveTool.FOUNTAIN_PEN) }
     var prevIsDark by remember { mutableStateOf(themeConfig.isDark) }
 
     val savedPressureCp1x = remember { prefs.getFloat("pressure_cp1x", PressureCurveDefaults.STANDARD.cp1x) }
@@ -838,16 +845,24 @@ fun BigNotesMainScreen(
     }
 
     // Synchronize paper, dark mode, active tool, and current color reactively
-    LaunchedEffect(themeConfig, activeTool, selectedColorIndex, selectedHighlighterColorIndex, canvasView) {
+    LaunchedEffect(
+        themeConfig,
+        activeTool,
+        selectedColorIndex,
+        selectedHighlighterColorIndex,
+        customInkColorRgb,
+        customHighlighterColorRgb,
+        canvasView
+    ) {
         val view = canvasView ?: return@LaunchedEffect
         view.paperColor = PaperColor.forTheme(themeConfig.isDark)
         view.isDarkMode = themeConfig.isDark
 
         val isHl = activeTool == ActiveTool.HIGHLIGHTER
         val activePalette = if (isHl) {
-            InkPalette.getHighlighterColors()
+            InkPalette.getHighlighterColors(customColorRgb = customHighlighterColorRgb)
         } else {
-            InkPalette.getColors()
+            InkPalette.getColors(customColorRgb = customInkColorRgb)
         }
         val chosenIndex = if (isHl) selectedHighlighterColorIndex else selectedColorIndex
         val activeColor = activePalette.getOrElse(chosenIndex) { activePalette[0] }
@@ -968,9 +983,9 @@ fun BigNotesMainScreen(
                 boundView.paperColor = PaperColor.forTheme(themeConfig.isDark)
                 boundView.isDarkMode = themeConfig.isDark
                 val activePalette = if (activeTool == ActiveTool.HIGHLIGHTER) {
-                    InkPalette.getHighlighterColors()
+                    InkPalette.getHighlighterColors(customColorRgb = customHighlighterColorRgb)
                 } else {
-                    InkPalette.getColors()
+                    InkPalette.getColors(customColorRgb = customInkColorRgb)
                 }
                 val chosenIndex = if (activeTool == ActiveTool.HIGHLIGHTER) selectedHighlighterColorIndex else selectedColorIndex
                 val activeColor = activePalette.getOrElse(chosenIndex) { activePalette[0] }
@@ -1006,6 +1021,32 @@ fun BigNotesMainScreen(
             },
             onPenContactChanged = { down ->
                 autoSaveCoordinator.onPenContactChanged(down, selectedNoteId)
+            },
+            onColorPicked = { sampledScreenRgb ->
+                val canonicalRgb = if (themeConfig.isDark) {
+                    val r = 255 - ((sampledScreenRgb ushr 16) and 0xFF).toInt()
+                    val g = 255 - ((sampledScreenRgb ushr 8) and 0xFF).toInt()
+                    val b = 255 - (sampledScreenRgb and 0xFF).toInt()
+                    0xFF000000L or ((r.toLong() and 0xFFL) shl 16) or ((g.toLong() and 0xFFL) shl 8) or (b.toLong() and 0xFFL)
+                } else {
+                    (sampledScreenRgb and 0x00FFFFFFL) or 0xFF000000L
+                }
+                if (toolBeforeEyedropper == ActiveTool.HIGHLIGHTER) {
+                    customHighlighterColorRgb = canonicalRgb
+                    selectedHighlighterColorIndex = InkPalette.CUSTOM_HIGHLIGHTER_SLOT_INDEX
+                    prefs.edit()
+                        .putLong("custom_highlighter_color_rgb", canonicalRgb)
+                        .putInt("selected_highlighter_color_idx", InkPalette.CUSTOM_HIGHLIGHTER_SLOT_INDEX)
+                        .apply()
+                } else {
+                    customInkColorRgb = canonicalRgb
+                    selectedColorIndex = InkPalette.CUSTOM_INK_SLOT_INDEX
+                    prefs.edit()
+                        .putLong("custom_ink_color_rgb", canonicalRgb)
+                        .putInt("selected_color_idx", InkPalette.CUSTOM_INK_SLOT_INDEX)
+                        .apply()
+                }
+                activeTool = toolBeforeEyedropper
             },
             selectedImage = selectedCanvasImage,
             onSelectedImageChange = { selectedCanvasImage = it },
@@ -1146,12 +1187,13 @@ fun BigNotesMainScreen(
             statusBarHeightDp = animatedStatusBarDp
         )
 
-        // 3. Collapsible Floating Inking Toolbar with Edge Docking and Radial Color/Size Flyout
-        val isHighlighterActive = activeTool == ActiveTool.HIGHLIGHTER
+        // 3. Collapsible Floating Inking Toolbar with Edge Docking, Live Tuning Popover & Radial Color/Size Flyout
+        val isHighlighterActive = activeTool == ActiveTool.HIGHLIGHTER ||
+            (activeTool == ActiveTool.COLOR_PICKER && toolBeforeEyedropper == ActiveTool.HIGHLIGHTER)
         val rawPalette = if (isHighlighterActive) {
-            InkPalette.getHighlighterColors()
+            InkPalette.getHighlighterColors(customColorRgb = customHighlighterColorRgb)
         } else {
-            InkPalette.getColors()
+            InkPalette.getColors(customColorRgb = customInkColorRgb)
         }
         val displayPalette = remember(rawPalette, themeConfig.isDark) {
             if (themeConfig.isDark) {
@@ -1186,19 +1228,19 @@ fun BigNotesMainScreen(
                     view.activeTool = tool
                     if (tool == ActiveTool.HIGHLIGHTER) {
                         view.renderer.currentTone = PencilTone.LIGHT
-                        val hlPalette = InkPalette.getHighlighterColors()
+                        val hlPalette = InkPalette.getHighlighterColors(customColorRgb = customHighlighterColorRgb)
                         val chosen = hlPalette.getOrElse(selectedHighlighterColorIndex) { hlPalette[0] }
                         view.renderer.currentColorRgb = chosen.colorRgb
                         view.renderer.currentPaletteIndex = chosen.slotIndex
                     } else if (tool == ActiveTool.FOUNTAIN_PEN) {
                         view.renderer.currentTone = PencilTone.INK_BLACK
-                        val inkPalette = InkPalette.getColors()
+                        val inkPalette = InkPalette.getColors(customColorRgb = customInkColorRgb)
                         val chosen = inkPalette.getOrElse(selectedColorIndex) { inkPalette[0] }
                         view.renderer.currentColorRgb = chosen.colorRgb
                         view.renderer.currentPaletteIndex = chosen.slotIndex
                     } else if (tool == ActiveTool.PENCIL) {
                         view.renderer.currentTone = PencilTone.SOFT
-                        val inkPalette = InkPalette.getColors()
+                        val inkPalette = InkPalette.getColors(customColorRgb = customInkColorRgb)
                         val chosen = inkPalette.getOrElse(selectedColorIndex) { inkPalette[0] }
                         view.renderer.currentColorRgb = chosen.colorRgb
                         view.renderer.currentPaletteIndex = chosen.slotIndex
@@ -1222,7 +1264,7 @@ fun BigNotesMainScreen(
                 if (activeTool == ActiveTool.HIGHLIGHTER) {
                     selectedHighlighterColorIndex = idx
                     prefs.edit().putInt("selected_highlighter_color_idx", idx).apply()
-                    val hlPalette = InkPalette.getHighlighterColors()
+                    val hlPalette = InkPalette.getHighlighterColors(customColorRgb = customHighlighterColorRgb)
                     val chosen = hlPalette.getOrElse(idx) { hlPalette[0] }
                     canvasView?.let { view ->
                         view.renderer.currentColorRgb = chosen.colorRgb
@@ -1231,13 +1273,45 @@ fun BigNotesMainScreen(
                 } else {
                     selectedColorIndex = idx
                     prefs.edit().putInt("selected_color_idx", idx).apply()
-                    val inkPalette = InkPalette.getColors()
+                    val inkPalette = InkPalette.getColors(customColorRgb = customInkColorRgb)
                     val chosen = inkPalette.getOrElse(idx) { inkPalette[0] }
                     canvasView?.let { view ->
                         view.renderer.currentColorRgb = chosen.colorRgb
                         view.renderer.currentPaletteIndex = chosen.slotIndex
                     }
                 }
+            },
+            onCustomColorSelected = { displayRgb ->
+                val canonicalRgb = if (themeConfig.isDark) {
+                    val r = 255 - ((displayRgb ushr 16) and 0xFF).toInt()
+                    val g = 255 - ((displayRgb ushr 8) and 0xFF).toInt()
+                    val b = 255 - (displayRgb and 0xFF).toInt()
+                    0xFF000000L or ((r.toLong() and 0xFFL) shl 16) or ((g.toLong() and 0xFFL) shl 8) or (b.toLong() and 0xFFL)
+                } else {
+                    (displayRgb and 0x00FFFFFFL) or 0xFF000000L
+                }
+                if (activeTool == ActiveTool.HIGHLIGHTER) {
+                    customHighlighterColorRgb = canonicalRgb
+                    selectedHighlighterColorIndex = InkPalette.CUSTOM_HIGHLIGHTER_SLOT_INDEX
+                    prefs.edit()
+                        .putLong("custom_highlighter_color_rgb", canonicalRgb)
+                        .putInt("selected_highlighter_color_idx", InkPalette.CUSTOM_HIGHLIGHTER_SLOT_INDEX)
+                        .apply()
+                } else {
+                    customInkColorRgb = canonicalRgb
+                    selectedColorIndex = InkPalette.CUSTOM_INK_SLOT_INDEX
+                    prefs.edit()
+                        .putLong("custom_ink_color_rgb", canonicalRgb)
+                        .putInt("selected_color_idx", InkPalette.CUSTOM_INK_SLOT_INDEX)
+                        .apply()
+                }
+            },
+            onActivateEyedropper = {
+                if (activeTool == ActiveTool.FOUNTAIN_PEN || activeTool == ActiveTool.PENCIL || activeTool == ActiveTool.HIGHLIGHTER) {
+                    toolBeforeEyedropper = activeTool
+                }
+                activeTool = ActiveTool.COLOR_PICKER
+                Toast.makeText(context, "Tap or drag on canvas to sample color", Toast.LENGTH_SHORT).show()
             },
             zoomScale = zoomScale,
             canUndo = canUndo,
@@ -1262,6 +1336,45 @@ fun BigNotesMainScreen(
             },
             sidebarOffsetPx = animatedSidebarWidthPx,
             statusBarHeightPx = statusBarTopPx.toFloat(),
+            inkBleedConfig = inkBleedConfig,
+            onInkBleedConfigChange = { newConfig ->
+                val clamped = newConfig.clamped()
+                inkBleedConfig = clamped
+                canvasView?.inkBleedConfig = clamped
+                prefs.edit().putString("ink_bleed_config_json", clamped.toJsonString()).apply()
+            },
+            strokeStabilizationEnabled = strokeStabilizationEnabled,
+            onStrokeStabilizationEnabledChange = { enabled ->
+                strokeStabilizationEnabled = enabled
+                canvasView?.strokeStabilizationEnabled = enabled
+                prefs.edit().putBoolean("stroke_stabilization_enabled", enabled).apply()
+            },
+            strokeStabilizationLevel = strokeStabilizationLevel,
+            onStrokeStabilizationLevelChange = { level ->
+                strokeStabilizationLevel = level
+                canvasView?.strokeStabilizationLevel = level
+                prefs.edit().putFloat("stroke_stabilization_level", level).apply()
+            },
+            pressureBezier = pressureBezierConfig,
+            onPressureBezierChange = { newCurve ->
+                pressureBezierConfig = newCurve
+                prefs.edit()
+                    .putFloat("pressure_cp1x", newCurve.cp1x)
+                    .putFloat("pressure_cp1y", newCurve.cp1y)
+                    .putFloat("pressure_cp2x", newCurve.cp2x)
+                    .putFloat("pressure_cp2y", newCurve.cp2y)
+                    .apply()
+            },
+            velocityBezier = velocityBezierConfig,
+            onVelocityBezierChange = { newCurve ->
+                velocityBezierConfig = newCurve
+                prefs.edit()
+                    .putFloat("velocity_cp1x", newCurve.cp1x)
+                    .putFloat("velocity_cp1y", newCurve.cp1y)
+                    .putFloat("velocity_cp2x", newCurve.cp2x)
+                    .putFloat("velocity_cp2y", newCurve.cp2y)
+                    .apply()
+            },
             onOpenPenSettings = {
                 activeSettingsCategory = SettingsCategory.PEN_STYLUS
                 showSettingsDialog = true

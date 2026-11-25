@@ -78,6 +78,13 @@ private data class HoverReticleState(
     val isVisible: Boolean = false
 )
 
+private data class ColorPickerReticleState(
+    val screenX: Float = 0f,
+    val screenY: Float = 0f,
+    val colorRgb: Long = 0xFF000000L,
+    val isVisible: Boolean = false
+)
+
 @Composable
 fun BigNotesCanvasView(
     activeTool: ActiveTool,
@@ -109,6 +116,7 @@ fun BigNotesCanvasView(
     onStrokesChanged: ((List<Stroke>) -> Unit)? = null,
     onStrokeStarted: (() -> String)? = null,
     onPenContactChanged: ((Boolean) -> Unit)? = null,
+    onColorPicked: ((Long) -> Unit)? = null,
     selectedImage: app.goodboy13.bignotes.core.model.CanvasImage? = null,
     onSelectedImageChange: ((app.goodboy13.bignotes.core.model.CanvasImage?) -> Unit)? = null,
     activeSearchHit: app.goodboy13.bignotes.core.search.model.SearchHit? = null,
@@ -123,6 +131,7 @@ fun BigNotesCanvasView(
 ) {
     var reticle by remember { mutableStateOf(ReticleState()) }
     var hoverReticle by remember { mutableStateOf(HoverReticleState()) }
+    var colorPickerReticle by remember { mutableStateOf(ColorPickerReticleState()) }
     var canvasViewRef by remember { mutableStateOf<SketchCanvasView?>(null) }
     var lassoPoints by remember { mutableStateOf<List<PointF>>(emptyList()) }
     var selectedStrokes by remember { mutableStateOf<List<Stroke>>(emptyList()) }
@@ -188,6 +197,12 @@ fun BigNotesCanvasView(
                     this.onHoverReticleChanged = { sx, sy, radius, tool, isPrecision, isVisible ->
                         hoverReticle = HoverReticleState(sx, sy, radius, tool, isPrecision, isVisible)
                     }
+                    this.onColorPickerReticleChanged = { sx, sy, colorRgb, isVisible ->
+                        colorPickerReticle = ColorPickerReticleState(sx, sy, colorRgb, isVisible)
+                    }
+                    this.onColorPicked = { sampled ->
+                        onColorPicked?.invoke(sampled)
+                    }
                     this.onLassoPathChanged = { pts ->
                         lassoPoints = pts
                     }
@@ -248,6 +263,7 @@ fun BigNotesCanvasView(
                 }
                 view.onStrokesChanged = onStrokesChanged
                 view.onPenContactChanged = onPenContactChanged
+                view.onColorPicked = onColorPicked
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -312,6 +328,33 @@ fun BigNotesCanvasView(
                 val center = Offset(hoverReticle.screenX, hoverReticle.screenY)
                 drawCircle(color = Color.Black.copy(alpha = 0.65f), radius = 2.dp.toPx(), center = center)
                 drawCircle(color = Color.White.copy(alpha = 0.90f), radius = 1.2.dp.toPx(), center = center)
+            }
+        }
+
+        // 1c. Live Eyedropper Loupe & Swatch Ring Overlay
+        if (colorPickerReticle.isVisible) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val center = Offset(colorPickerReticle.screenX, colorPickerReticle.screenY)
+                val sampled = Color((colorPickerReticle.colorRgb or 0xFF000000L).toInt())
+                val ringRadius = 26.dp.toPx()
+                drawCircle(
+                    color = sampled,
+                    radius = ringRadius,
+                    center = center,
+                    style = DrawStroke(width = 6.dp.toPx())
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = ringRadius + 3.dp.toPx(),
+                    center = center,
+                    style = DrawStroke(width = 1.5.dp.toPx())
+                )
+                drawCircle(
+                    color = Color.Black.copy(alpha = 0.65f),
+                    radius = 4.dp.toPx(),
+                    center = center,
+                    style = DrawStroke(width = 1.5.dp.toPx())
+                )
             }
         }
 

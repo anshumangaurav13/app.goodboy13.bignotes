@@ -1034,7 +1034,7 @@ private fun InkParamsDetail(
             label = "Pigment Dilution",
             description = "Single-stroke ink opacity before subtractive overlap",
             value = config.inkDilution,
-            valueRange = 0.02f..1.00f,
+            valueRange = 0.05f..1.00f,
             formattedValue = "${(config.inkDilution * 100f).roundToInt()}%",
             onValueChange = { onConfigChange(config.copy(inkDilution = it)) }
         )

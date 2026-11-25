@@ -11,13 +11,12 @@ data class InkColorItem(
 )
 
 object InkPalette {
-    // 6-color standard palette:
-    // Slot 0: Ink Black
-    // Slot 1: Slate
-    // Slot 2: Crimson
-    // Slot 3: Royal Blue
-    // Slot 4: Emerald
-    // Slot 5: Amber
+    const val CUSTOM_INK_SLOT_INDEX = 6
+    const val CUSTOM_HIGHLIGHTER_SLOT_INDEX = 3
+    const val DEFAULT_CUSTOM_INK_RGB = 0xFF7C3AEDL
+    const val DEFAULT_CUSTOM_HIGHLIGHTER_RGB = 0xFFA78BFAL
+
+    // 6-color standard palette + Slot 6 editable custom ink:
     private val StandardInkColors = listOf(
         InkColorItem(0, "Ink Black", Color(0xFF000000)),
         InkColorItem(1, "Slate", Color(0xFF475569)),
@@ -40,9 +39,30 @@ object InkPalette {
         hlItem(2, "Coral Pink", Color(0xFFFB7185))
     )
 
-    fun getColors(isDark: Boolean = false): List<InkColorItem> = StandardInkColors
+    fun getColors(isDark: Boolean = false, customColorRgb: Long? = DEFAULT_CUSTOM_INK_RGB): List<InkColorItem> {
+        val custom = customColorRgb ?: DEFAULT_CUSTOM_INK_RGB
+        val normalized = (custom and 0x00FFFFFFL) or 0xFF000000L
+        return StandardInkColors + InkColorItem(
+            slotIndex = CUSTOM_INK_SLOT_INDEX,
+            name = "Custom",
+            color = Color(normalized.toInt()),
+            colorRgb = normalized
+        )
+    }
 
-    fun getHighlighterColors(isDark: Boolean = false): List<InkColorItem> = StandardHighlighterColors
+    fun getHighlighterColors(
+        isDark: Boolean = false,
+        customColorRgb: Long? = DEFAULT_CUSTOM_HIGHLIGHTER_RGB
+    ): List<InkColorItem> {
+        val custom = customColorRgb ?: DEFAULT_CUSTOM_HIGHLIGHTER_RGB
+        val normalized = (custom and 0x00FFFFFFL) or 0xFF000000L
+        return StandardHighlighterColors + InkColorItem(
+            slotIndex = CUSTOM_HIGHLIGHTER_SLOT_INDEX,
+            name = "Custom",
+            color = Color(normalized.toInt()),
+            colorRgb = normalized
+        )
+    }
 
     /**
      * Converts a stroke's color when dark mode changes.
@@ -53,7 +73,10 @@ object InkPalette {
         oldIsDark: Boolean,
         newIsDark: Boolean
     ): Long {
-        val palette = getColors(newIsDark)
+        if (paletteIndex == CUSTOM_INK_SLOT_INDEX) {
+            return (previousColorRgb and 0x00FFFFFFL) or 0xFF000000L
+        }
+        val palette = StandardInkColors
         if (paletteIndex in palette.indices) {
             return palette[paletteIndex].colorRgb
         }

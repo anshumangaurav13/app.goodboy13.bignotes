@@ -38,6 +38,10 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.goodboy13.bignotes.core.model.ActiveTool
+import app.goodboy13.bignotes.core.model.BezierControlPoints
+import app.goodboy13.bignotes.core.model.InkBleedConfig
+import app.goodboy13.bignotes.core.model.PressureCurveDefaults
+import app.goodboy13.bignotes.core.model.VelocityCurveDefaults
 import app.goodboy13.bignotes.ui.theme.BigNotesMotion
 import app.goodboy13.bignotes.ui.theme.CustomIcons
 import app.goodboy13.bignotes.ui.theme.InkColorItem
@@ -53,11 +57,8 @@ enum class DockEdge {
 }
 
 /**
- * Collapsible Floating Toolbar that morphs between horizontal
- * (near top/bottom screen edges) and vertical (near left/right edges).
- *
- * In Collapsed mode: Shows only [Selected writing tool], [Eraser], [Undo/Redo], and [Expand].
- * In Expanded mode: Shows all writing tools, eraser, lasso, insert image, undo/redo, zoom, and collapse.
+ * Collapsible Floating Toolbar that morphs cleanly between horizontal (TOP/BOTTOM)
+ * and vertical (LEFT/RIGHT) layouts via a shared [ToolbarContent] body.
  */
 @Composable
 fun FloatingNoteToolbar(
@@ -70,6 +71,8 @@ fun FloatingNoteToolbar(
     paletteColors: List<InkColorItem>,
     selectedColorIndex: Int,
     onColorSelect: (Int) -> Unit,
+    onCustomColorSelected: ((Long) -> Unit)? = null,
+    onActivateEyedropper: (() -> Unit)? = null,
     zoomScale: Float,
     canUndo: Boolean,
     canRedo: Boolean,
@@ -83,6 +86,16 @@ fun FloatingNoteToolbar(
     onDockStateChanged: (edge: DockEdge, posFraction: Float, isCollapsed: Boolean) -> Unit = { _, _, _ -> },
     sidebarOffsetPx: Float = 0f,
     statusBarHeightPx: Float = 0f,
+    inkBleedConfig: InkBleedConfig = InkBleedConfig.DEFAULT,
+    onInkBleedConfigChange: ((InkBleedConfig) -> Unit)? = null,
+    strokeStabilizationEnabled: Boolean = true,
+    onStrokeStabilizationEnabledChange: ((Boolean) -> Unit)? = null,
+    strokeStabilizationLevel: Float = 0.50f,
+    onStrokeStabilizationLevelChange: ((Float) -> Unit)? = null,
+    pressureBezier: BezierControlPoints = PressureCurveDefaults.STANDARD,
+    onPressureBezierChange: ((BezierControlPoints) -> Unit)? = null,
+    velocityBezier: BezierControlPoints = VelocityCurveDefaults.CALLIGRAPHIC,
+    onVelocityBezierChange: ((VelocityControlPointsAlias) -> Unit)? = null,
     onOpenPenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -102,6 +115,8 @@ fun FloatingNoteToolbar(
     var toolbarSizePx by remember { mutableStateOf(IntSize.Zero) }
 
     var isRadialOpen by remember { mutableStateOf(false) }
+    var isTuningOpen by remember { mutableStateOf(false) }
+
     var fountainPenAnchor by remember { mutableStateOf(Offset.Zero) }
     var pencilAnchor by remember { mutableStateOf(Offset.Zero) }
     var highlighterAnchor by remember { mutableStateOf(Offset.Zero) }
@@ -119,7 +134,6 @@ fun FloatingNoteToolbar(
         }
     }
 
-    // Last used writing tool (for collapsed mode display)
     var lastWritingTool by remember { mutableStateOf(ActiveTool.FOUNTAIN_PEN) }
     if (activeTool == ActiveTool.FOUNTAIN_PEN || activeTool == ActiveTool.PENCIL || activeTool == ActiveTool.HIGHLIGHTER) {
         lastWritingTool = activeTool
@@ -127,7 +141,6 @@ fun FloatingNoteToolbar(
 
     var lastEraserMode by remember { mutableStateOf(ActiveTool.PRECISION_ERASER) }
 
-    // Compute target snapped position (defensive range clamping prevents empty-range crashes when sidebar opens)
     val snappedTargetOffset = remember(
         dockEdge, posFraction, toolbarSizePx, screenWidthPx, screenHeightPx, sidebarOffsetPx, statusBarHeightPx
     ) {
@@ -163,7 +176,6 @@ fun FloatingNoteToolbar(
         }
     }
 
-    // Smooth position animation when not actively dragging
     val animatedOffset by animateOffsetAsState(
         targetValue = if (isDragging) liveDragOffset else snappedTargetOffset,
         animationSpec = if (isDragging || reducedMotion) snap() else spring(
@@ -178,8 +190,51 @@ fun FloatingNoteToolbar(
         lastValidAnchor = activeToolAnchor
     }
 
+    val onDragStartHandler = {
+        isDragging = true
+        liveDragOffset = animatedOffset
+        isRadialOpen = false
+        isTuningOpen = false
+    }
+
+    val onDragDeltaHandler: (Offset) -> Unit = { delta ->
+        val tw = toolbarSizePx.width.toFloat()
+        val th = toolbarSizePx.height.toFloat()
+        liveDragOffset = Offset(
+            (liveDragOffset.x + delta.x).coerceIn(0f, screenWidthPx - tw),
+            (liveDragOffset.y + delta.y).coerceIn(0f, screenHeightPx - th)
+        )
+    }
+
+    val onDragEndHandler = {
+        isDragging = false
+        val tw = toolbarSizePx.width.toFloat()
+        val th = toolbarSizePx.height.toFloat()
+        val centerX = liveDragOffset.x + tw / 2f
+        val centerY = liveDragOffset.y + th / 2f
+
+        val distTop = centerY
+        val distBottom = screenHeightPx - centerY
+        val distLeft = centerX
+        val distRight = screenWidthPx - centerX
+
+        val newEdge = when (minOf(distTop, distBottom, distLeft, distRight)) {
+            distTop -> DockEdge.TOP
+            distBottom -> DockEdge.BOTTOM
+            distLeft -> DockEdge.LEFT
+            else -> DockEdge.RIGHT
+        }
+        dockEdge = newEdge
+        posFraction = if (newEdge.isHorizontal) {
+            (centerX / screenWidthPx).coerceIn(0.15f, 0.85f)
+        } else {
+            (centerY / screenHeightPx).coerceIn(0.15f, 0.85f)
+        }
+        onDockStateChanged(dockEdge, posFraction, isCollapsed)
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
-        // Staging scrim backdrop when radial flyout is open: dims competing canvas noise and dismisses on outside tap
+        // Staging scrim backdrop ONLY for radial flyout (tuning popover stays non-modal so user can draw beside it!)
         AnimatedVisibility(
             visible = isRadialOpen,
             enter = fadeIn(animationSpec = BigNotesMotion.enterTween(160, reducedMotion)),
@@ -195,7 +250,7 @@ fun FloatingNoteToolbar(
             )
         }
 
-        // Floating Toolbar Pill (animateContentSize lives inside Surface so shadowElevation is never clipped)
+        // Unified Floating Toolbar Pill
         Surface(
             shape = RoundedCornerShape(22.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
@@ -220,505 +275,130 @@ fun FloatingNoteToolbar(
                     )
                 )
             ) {
-            if (dockEdge.isHorizontal) {
-                // Horizontal Toolbar Layout (Top / Bottom)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                ) {
-                    // Drag Handle
+                val isHorizontal = dockEdge.isHorizontal
+                val innerContent: @Composable () -> Unit = {
                     DragHandle(
-                        isHorizontal = true,
-                        onDragStart = {
-                            isDragging = true
-                            liveDragOffset = animatedOffset
-                            isRadialOpen = false
-                        },
-                        onDragDelta = { delta ->
-                            val tw = toolbarSizePx.width.toFloat()
-                            val th = toolbarSizePx.height.toFloat()
-                            liveDragOffset = Offset(
-                                (liveDragOffset.x + delta.x).coerceIn(0f, screenWidthPx - tw),
-                                (liveDragOffset.y + delta.y).coerceIn(0f, screenHeightPx - th)
-                            )
-                        },
-                        onDragEnd = {
-                            isDragging = false
-                            val tw = toolbarSizePx.width.toFloat()
-                            val th = toolbarSizePx.height.toFloat()
-                            val centerX = liveDragOffset.x + tw / 2f
-                            val centerY = liveDragOffset.y + th / 2f
-
-                            val distTop = centerY
-                            val distBottom = screenHeightPx - centerY
-                            val distLeft = centerX
-                            val distRight = screenWidthPx - centerX
-
-                            val minDist = minOf(distTop, distBottom, distLeft, distRight)
-                            val newEdge = when (minDist) {
-                                distTop -> DockEdge.TOP
-                                distBottom -> DockEdge.BOTTOM
-                                distLeft -> DockEdge.LEFT
-                                else -> DockEdge.RIGHT
-                            }
-                            dockEdge = newEdge
-
-                            posFraction = if (newEdge.isHorizontal) {
-                                (centerX / screenWidthPx).coerceIn(0.15f, 0.85f)
-                            } else {
-                                (centerY / screenHeightPx).coerceIn(0.15f, 0.85f)
-                            }
-                            onDockStateChanged(dockEdge, posFraction, isCollapsed)
-                        }
+                        isHorizontal = isHorizontal,
+                        onDragStart = onDragStartHandler,
+                        onDragDelta = onDragDeltaHandler,
+                        onDragEnd = onDragEndHandler
                     )
 
-                    Spacer(modifier = Modifier.width(4.dp))
+                    if (isHorizontal) Spacer(modifier = Modifier.width(4.dp))
+                    else Spacer(modifier = Modifier.height(4.dp))
 
-                    if (isCollapsed) {
-                        // COLLAPSED MODE: [Selected Tool], [Eraser], [Undo], [Redo], [Expand]
-                        WritingToolButton(
-                            tool = lastWritingTool,
-                            isActive = activeTool == lastWritingTool,
-                            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Black,
-                            onToolClick = {
-                                if (activeTool != lastWritingTool) {
-                                    onToolChange(lastWritingTool)
-                                } else {
-                                    isRadialOpen = !isRadialOpen
-                                }
-                            },
-                            onPositioned = { collapsedToolAnchor = it },
-                            onLongClick = onOpenPenSettings
-                        )
-
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        EraserButton(
-                            activeTool = activeTool,
-                            lastEraserMode = lastEraserMode,
-                            onModeSwitch = { next ->
-                                lastEraserMode = next
-                                onToolChange(next)
-                            },
-                            onPositioned = { eraserAnchor = it },
-                            onToggleRadial = { isRadialOpen = !isRadialOpen }
-                        )
-
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        UndoRedoButtons(
-                            canUndo = canUndo,
-                            canRedo = canRedo,
-                            onUndo = onUndo,
-                            onRedo = onRedo,
-                            isHorizontal = true
-                        )
-
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        // Expand Button
-                        IconButton(
-                            onClick = {
-                                isCollapsed = false
-                                onDockStateChanged(dockEdge, posFraction, false)
-                            },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.UnfoldMore,
-                                contentDescription = "Expand Toolbar",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
-                    } else {
-                        // EXPANDED MODE: All tools, image, undo/redo, zoom, collapse
-                        WritingToolButton(
-                            tool = ActiveTool.FOUNTAIN_PEN,
-                            isActive = activeTool == ActiveTool.FOUNTAIN_PEN,
-                            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Black,
-                            onToolClick = {
-                                if (activeTool != ActiveTool.FOUNTAIN_PEN) {
-                                    onToolChange(ActiveTool.FOUNTAIN_PEN)
-                                } else {
-                                    isRadialOpen = !isRadialOpen
-                                }
-                            },
-                            onPositioned = { fountainPenAnchor = it },
-                            onLongClick = onOpenPenSettings
-                        )
-
-                        WritingToolButton(
-                            tool = ActiveTool.PENCIL,
-                            isActive = activeTool == ActiveTool.PENCIL,
-                            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Black,
-                            onToolClick = {
-                                if (activeTool != ActiveTool.PENCIL) {
-                                    onToolChange(ActiveTool.PENCIL)
-                                } else {
-                                    isRadialOpen = !isRadialOpen
-                                }
-                            },
-                            onPositioned = { pencilAnchor = it },
-                            onLongClick = onOpenPenSettings
-                        )
-
-                        WritingToolButton(
-                            tool = ActiveTool.HIGHLIGHTER,
-                            isActive = activeTool == ActiveTool.HIGHLIGHTER,
-                            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Yellow,
-                            onToolClick = {
-                                if (activeTool != ActiveTool.HIGHLIGHTER) {
-                                    onToolChange(ActiveTool.HIGHLIGHTER)
-                                } else {
-                                    isRadialOpen = !isRadialOpen
-                                }
-                            },
-                            onPositioned = { highlighterAnchor = it },
-                            onLongClick = onOpenPenSettings
-                        )
-
-                        EraserButton(
-                            activeTool = activeTool,
-                            lastEraserMode = lastEraserMode,
-                            onModeSwitch = { next ->
-                                lastEraserMode = next
-                                onToolChange(next)
-                            },
-                            onPositioned = { eraserAnchor = it },
-                            onToggleRadial = { isRadialOpen = !isRadialOpen }
-                        )
-
-                        // Lasso
-                        val isLasso = activeTool == ActiveTool.LASSO
-                        IconButton(
-                            onClick = {
-                                isRadialOpen = false
-                                onToolChange(ActiveTool.LASSO)
-                            },
-                            colors = if (isLasso) {
-                                IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                )
-                            } else IconButtonDefaults.iconButtonColors(),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Gesture,
-                                contentDescription = "Lasso Selection",
-                                modifier = Modifier.size(20.dp),
-                                tint = if (isLasso) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            )
-                        }
-
-                        // Insert Image
-                        if (onInsertImage != null) {
-                            IconButton(
-                                onClick = onInsertImage,
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AddPhotoAlternate,
-                                    contentDescription = "Insert Image",
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                )
-                            }
-                        }
-
-                        VerticalDivider(
-                            modifier = Modifier
-                                .height(22.dp)
-                                .padding(horizontal = 4.dp),
-                            thickness = 1.dp,
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)
-                        )
-
-                        UndoRedoButtons(
-                            canUndo = canUndo,
-                            canRedo = canRedo,
-                            onUndo = onUndo,
-                            onRedo = onRedo,
-                            isHorizontal = true
-                        )
-
-                        // Zoom Indicator
-                        Spacer(modifier = Modifier.width(2.dp))
-                        ZoomIndicator(zoomScale = zoomScale, onResetZoom = onResetZoom)
-
-                        Spacer(modifier = Modifier.width(2.dp))
-
-                        // Collapse Button
-                        IconButton(
-                            onClick = {
-                                isCollapsed = true
-                                isRadialOpen = false
-                                onDockStateChanged(dockEdge, posFraction, true)
-                            },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.UnfoldLess,
-                                contentDescription = "Collapse Toolbar",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
-                    }
-                }
-            } else {
-                // Vertical Toolbar Layout (Left / Right)
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
-                ) {
-                    // Drag Handle
-                    DragHandle(
-                        isHorizontal = false,
-                        onDragStart = {
-                            isDragging = true
-                            liveDragOffset = animatedOffset
+                    ToolbarBody(
+                        isHorizontal = isHorizontal,
+                        isCollapsed = isCollapsed,
+                        activeTool = activeTool,
+                        lastWritingTool = lastWritingTool,
+                        lastEraserMode = lastEraserMode,
+                        paletteColors = paletteColors,
+                        selectedColorIndex = selectedColorIndex,
+                        canUndo = canUndo,
+                        canRedo = canRedo,
+                        zoomScale = zoomScale,
+                        isTuningOpen = isTuningOpen,
+                        hasTuningControls = onInkBleedConfigChange != null,
+                        onToolChange = { tool ->
                             isRadialOpen = false
+                            onToolChange(tool)
                         },
-                        onDragDelta = { delta ->
-                            val tw = toolbarSizePx.width.toFloat()
-                            val th = toolbarSizePx.height.toFloat()
-                            liveDragOffset = Offset(
-                                (liveDragOffset.x + delta.x).coerceIn(0f, screenWidthPx - tw),
-                                (liveDragOffset.y + delta.y).coerceIn(0f, screenHeightPx - th)
-                            )
-                        },
-                        onDragEnd = {
-                            isDragging = false
-                            val tw = toolbarSizePx.width.toFloat()
-                            val th = toolbarSizePx.height.toFloat()
-                            val centerX = liveDragOffset.x + tw / 2f
-                            val centerY = liveDragOffset.y + th / 2f
-
-                            val distTop = centerY
-                            val distBottom = screenHeightPx - centerY
-                            val distLeft = centerX
-                            val distRight = screenWidthPx - centerX
-
-                            val minDist = minOf(distTop, distBottom, distLeft, distRight)
-                            val newEdge = when (minDist) {
-                                distTop -> DockEdge.TOP
-                                distBottom -> DockEdge.BOTTOM
-                                distLeft -> DockEdge.LEFT
-                                else -> DockEdge.RIGHT
-                            }
-                            dockEdge = newEdge
-
-                            posFraction = if (newEdge.isHorizontal) {
-                                (centerX / screenWidthPx).coerceIn(0.15f, 0.85f)
+                        onSelectOrToggleRadial = { tool ->
+                            isTuningOpen = false
+                            if (activeTool != tool) {
+                                onToolChange(tool)
                             } else {
-                                (centerY / screenHeightPx).coerceIn(0.15f, 0.85f)
+                                isRadialOpen = !isRadialOpen
                             }
-                            onDockStateChanged(dockEdge, posFraction, isCollapsed)
+                        },
+                        onEraserModeSwitch = { next ->
+                            lastEraserMode = next
+                            isTuningOpen = false
+                            onToolChange(next)
+                        },
+                        onToggleRadial = {
+                            isTuningOpen = false
+                            isRadialOpen = !isRadialOpen
+                        },
+                        onOpenTuning = {
+                            isRadialOpen = false
+                            if (onInkBleedConfigChange != null) {
+                                isTuningOpen = !isTuningOpen
+                            } else {
+                                onOpenPenSettings?.invoke()
+                            }
+                        },
+                        onLongClickTool = {
+                            isRadialOpen = false
+                            if (onInkBleedConfigChange != null) {
+                                isTuningOpen = true
+                            } else {
+                                onOpenPenSettings?.invoke()
+                            }
+                        },
+                        onCollapsedAnchor = { collapsedToolAnchor = it },
+                        onFountainAnchor = { fountainPenAnchor = it },
+                        onPencilAnchor = { pencilAnchor = it },
+                        onHighlighterAnchor = { highlighterAnchor = it },
+                        onEraserAnchor = { eraserAnchor = it },
+                        onUndo = onUndo,
+                        onRedo = onRedo,
+                        onResetZoom = onResetZoom,
+                        onInsertImage = onInsertImage,
+                        onSetCollapsed = { collapsed ->
+                            isCollapsed = collapsed
+                            isRadialOpen = false
+                            if (collapsed) isTuningOpen = false
+                            onDockStateChanged(dockEdge, posFraction, collapsed)
                         }
                     )
+                }
 
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    if (isCollapsed) {
-                        // COLLAPSED MODE VERTICAL: [Selected Tool], [Eraser], [Undo], [Redo], [Expand]
-                        WritingToolButton(
-                            tool = lastWritingTool,
-                            isActive = activeTool == lastWritingTool,
-                            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Black,
-                            onToolClick = {
-                                if (activeTool != lastWritingTool) {
-                                    onToolChange(lastWritingTool)
-                                } else {
-                                    isRadialOpen = !isRadialOpen
-                                }
-                            },
-                            onPositioned = { collapsedToolAnchor = it },
-                            onLongClick = onOpenPenSettings
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        EraserButton(
-                            activeTool = activeTool,
-                            lastEraserMode = lastEraserMode,
-                            onModeSwitch = { next ->
-                                lastEraserMode = next
-                                onToolChange(next)
-                            },
-                            onPositioned = { eraserAnchor = it },
-                            onToggleRadial = { isRadialOpen = !isRadialOpen }
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        UndoRedoButtons(
-                            canUndo = canUndo,
-                            canRedo = canRedo,
-                            onUndo = onUndo,
-                            onRedo = onRedo,
-                            isHorizontal = false
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // Expand Button
-                        IconButton(
-                            onClick = {
-                                isCollapsed = false
-                                onDockStateChanged(dockEdge, posFraction, false)
-                            },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.UnfoldMore,
-                                contentDescription = "Expand Toolbar",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
-                    } else {
-                        // EXPANDED MODE VERTICAL
-                        WritingToolButton(
-                            tool = ActiveTool.FOUNTAIN_PEN,
-                            isActive = activeTool == ActiveTool.FOUNTAIN_PEN,
-                            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Black,
-                            onToolClick = {
-                                if (activeTool != ActiveTool.FOUNTAIN_PEN) {
-                                    onToolChange(ActiveTool.FOUNTAIN_PEN)
-                                } else {
-                                    isRadialOpen = !isRadialOpen
-                                }
-                            },
-                            onPositioned = { fountainPenAnchor = it },
-                            onLongClick = onOpenPenSettings
-                        )
-
-                        WritingToolButton(
-                            tool = ActiveTool.PENCIL,
-                            isActive = activeTool == ActiveTool.PENCIL,
-                            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Black,
-                            onToolClick = {
-                                if (activeTool != ActiveTool.PENCIL) {
-                                    onToolChange(ActiveTool.PENCIL)
-                                } else {
-                                    isRadialOpen = !isRadialOpen
-                                }
-                            },
-                            onPositioned = { pencilAnchor = it },
-                            onLongClick = onOpenPenSettings
-                        )
-
-                        WritingToolButton(
-                            tool = ActiveTool.HIGHLIGHTER,
-                            isActive = activeTool == ActiveTool.HIGHLIGHTER,
-                            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Yellow,
-                            onToolClick = {
-                                if (activeTool != ActiveTool.HIGHLIGHTER) {
-                                    onToolChange(ActiveTool.HIGHLIGHTER)
-                                } else {
-                                    isRadialOpen = !isRadialOpen
-                                }
-                            },
-                            onPositioned = { highlighterAnchor = it },
-                            onLongClick = onOpenPenSettings
-                        )
-
-                        EraserButton(
-                            activeTool = activeTool,
-                            lastEraserMode = lastEraserMode,
-                            onModeSwitch = { next ->
-                                lastEraserMode = next
-                                onToolChange(next)
-                            },
-                            onPositioned = { eraserAnchor = it },
-                            onToggleRadial = { isRadialOpen = !isRadialOpen }
-                        )
-
-                        // Lasso
-                        val isLasso = activeTool == ActiveTool.LASSO
-                        IconButton(
-                            onClick = {
-                                isRadialOpen = false
-                                onToolChange(ActiveTool.LASSO)
-                            },
-                            colors = if (isLasso) {
-                                IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                )
-                            } else IconButtonDefaults.iconButtonColors(),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Gesture,
-                                contentDescription = "Lasso Selection",
-                                modifier = Modifier.size(20.dp),
-                                tint = if (isLasso) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            )
-                        }
-
-                        // Insert Image
-                        if (onInsertImage != null) {
-                            IconButton(
-                                onClick = onInsertImage,
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AddPhotoAlternate,
-                                    contentDescription = "Insert Image",
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(
-                            modifier = Modifier
-                                .width(22.dp)
-                                .padding(vertical = 4.dp),
-                            thickness = 1.dp,
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)
-                        )
-
-                        UndoRedoButtons(
-                            canUndo = canUndo,
-                            canRedo = canRedo,
-                            onUndo = onUndo,
-                            onRedo = onRedo,
-                            isHorizontal = false
-                        )
-
-                        // Zoom Indicator
-                        Spacer(modifier = Modifier.height(2.dp))
-                        ZoomIndicator(zoomScale = zoomScale, onResetZoom = onResetZoom)
-
-                        Spacer(modifier = Modifier.height(2.dp))
-
-                        // Collapse Button
-                        IconButton(
-                            onClick = {
-                                isCollapsed = true
-                                isRadialOpen = false
-                                onDockStateChanged(dockEdge, posFraction, true)
-                            },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.UnfoldLess,
-                                contentDescription = "Collapse Toolbar",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
+                if (isHorizontal) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        innerContent()
+                    }
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                    ) {
+                        innerContent()
                     }
                 }
-            }
             }
         }
 
-        // Radial Dual-Arc Satellite Color/Size Flyout (kept composed to animate both enter and exit symmetrically)
+        // Anchored Non-Modal Live Canvas Tuning Popover (Ink & Bleed + Pen & Feel)
+        if (onInkBleedConfigChange != null && toolbarSizePx != IntSize.Zero) {
+            InkPenTuningPopover(
+                visible = isTuningOpen && !isRadialOpen,
+                toolbarOffsetPx = animatedOffset,
+                toolbarSizePx = toolbarSizePx,
+                dockEdge = dockEdge,
+                inkBleedConfig = inkBleedConfig,
+                onInkBleedConfigChange = onInkBleedConfigChange,
+                strokeStabilizationEnabled = strokeStabilizationEnabled,
+                onStrokeStabilizationEnabledChange = { onStrokeStabilizationEnabledChange?.invoke(it) },
+                strokeStabilizationLevel = strokeStabilizationLevel,
+                onStrokeStabilizationLevelChange = { onStrokeStabilizationLevelChange?.invoke(it) },
+                pressureBezier = pressureBezier,
+                onPressureBezierChange = { onPressureBezierChange?.invoke(it) },
+                velocityBezier = velocityBezier,
+                onVelocityBezierChange = { onVelocityBezierChange?.invoke(it) },
+                onOpenAdvancedSettings = {
+                    isTuningOpen = false
+                    onOpenPenSettings?.invoke()
+                },
+                onDismiss = { isTuningOpen = false }
+            )
+        }
+
+        // Radial Dual-Arc Satellite Color/Size Flyout
         if (lastValidAnchor != Offset.Zero) {
             RadialColorSizeFlyout(
                 visible = isRadialOpen && activeToolAnchor != Offset.Zero,
@@ -726,19 +406,226 @@ fun FloatingNoteToolbar(
                 dockEdge = dockEdge,
                 paletteColors = paletteColors,
                 selectedColorIndex = selectedColorIndex,
-                onColorSelect = { idx ->
-                    onColorSelect(idx)
-                },
+                onColorSelect = onColorSelect,
+                onCustomColorSelected = onCustomColorSelected,
+                onActivateEyedropper = onActivateEyedropper,
                 strokeSize = strokeSize,
-                onStrokeSizeChange = { sz ->
-                    onStrokeSizeChange(sz)
-                },
+                onStrokeSizeChange = onStrokeSizeChange,
                 isEraser = activeTool == ActiveTool.PRECISION_ERASER,
                 eraserRadius = eraserRadius,
-                onEraserRadiusChange = { newR ->
-                    onEraserRadiusChange(newR)
-                },
+                onEraserRadiusChange = onEraserRadiusChange,
                 onDismiss = { isRadialOpen = false }
+            )
+        }
+    }
+}
+
+private typealias VelocityControlPointsAlias = BezierControlPoints
+
+@Composable
+private fun ToolbarBody(
+    isHorizontal: Boolean,
+    isCollapsed: Boolean,
+    activeTool: ActiveTool,
+    lastWritingTool: ActiveTool,
+    lastEraserMode: ActiveTool,
+    paletteColors: List<InkColorItem>,
+    selectedColorIndex: Int,
+    canUndo: Boolean,
+    canRedo: Boolean,
+    zoomScale: Float,
+    isTuningOpen: Boolean,
+    hasTuningControls: Boolean,
+    onToolChange: (ActiveTool) -> Unit,
+    onSelectOrToggleRadial: (ActiveTool) -> Unit,
+    onEraserModeSwitch: (ActiveTool) -> Unit,
+    onToggleRadial: () -> Unit,
+    onOpenTuning: () -> Unit,
+    onLongClickTool: () -> Unit,
+    onCollapsedAnchor: (Offset) -> Unit,
+    onFountainAnchor: (Offset) -> Unit,
+    onPencilAnchor: (Offset) -> Unit,
+    onHighlighterAnchor: (Offset) -> Unit,
+    onEraserAnchor: (Offset) -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onResetZoom: (() -> Unit)?,
+    onInsertImage: (() -> Unit)?,
+    onSetCollapsed: (Boolean) -> Unit
+) {
+    val gapModifier = if (isHorizontal) Modifier.width(4.dp) else Modifier.height(4.dp)
+    val smallGapModifier = if (isHorizontal) Modifier.width(2.dp) else Modifier.height(2.dp)
+
+    if (isCollapsed) {
+        WritingToolButton(
+            tool = lastWritingTool,
+            isActive = activeTool == lastWritingTool,
+            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Black,
+            onToolClick = { onSelectOrToggleRadial(lastWritingTool) },
+            onPositioned = onCollapsedAnchor,
+            onLongClick = onLongClickTool
+        )
+
+        Spacer(modifier = gapModifier)
+
+        EraserButton(
+            activeTool = activeTool,
+            lastEraserMode = lastEraserMode,
+            onModeSwitch = onEraserModeSwitch,
+            onPositioned = onEraserAnchor,
+            onToggleRadial = onToggleRadial
+        )
+
+        Spacer(modifier = gapModifier)
+
+        UndoRedoButtons(
+            canUndo = canUndo,
+            canRedo = canRedo,
+            onUndo = onUndo,
+            onRedo = onRedo,
+            isHorizontal = isHorizontal
+        )
+
+        Spacer(modifier = gapModifier)
+
+        IconButton(
+            onClick = { onSetCollapsed(false) },
+            modifier = Modifier.size(34.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.UnfoldMore,
+                contentDescription = "Expand Toolbar",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier.size(19.dp)
+            )
+        }
+    } else {
+        WritingToolButton(
+            tool = ActiveTool.FOUNTAIN_PEN,
+            isActive = activeTool == ActiveTool.FOUNTAIN_PEN,
+            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Black,
+            onToolClick = { onSelectOrToggleRadial(ActiveTool.FOUNTAIN_PEN) },
+            onPositioned = onFountainAnchor,
+            onLongClick = onLongClickTool
+        )
+
+        WritingToolButton(
+            tool = ActiveTool.PENCIL,
+            isActive = activeTool == ActiveTool.PENCIL,
+            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Black,
+            onToolClick = { onSelectOrToggleRadial(ActiveTool.PENCIL) },
+            onPositioned = onPencilAnchor,
+            onLongClick = onLongClickTool
+        )
+
+        WritingToolButton(
+            tool = ActiveTool.HIGHLIGHTER,
+            isActive = activeTool == ActiveTool.HIGHLIGHTER,
+            currentColor = paletteColors.getOrNull(selectedColorIndex)?.color ?: Color.Yellow,
+            onToolClick = { onSelectOrToggleRadial(ActiveTool.HIGHLIGHTER) },
+            onPositioned = onHighlighterAnchor,
+            onLongClick = onLongClickTool
+        )
+
+        EraserButton(
+            activeTool = activeTool,
+            lastEraserMode = lastEraserMode,
+            onModeSwitch = onEraserModeSwitch,
+            onPositioned = onEraserAnchor,
+            onToggleRadial = onToggleRadial
+        )
+
+        // Lasso
+        val isLasso = activeTool == ActiveTool.LASSO
+        IconButton(
+            onClick = { onToolChange(ActiveTool.LASSO) },
+            colors = if (isLasso) {
+                IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
+            } else IconButtonDefaults.iconButtonColors(),
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Gesture,
+                contentDescription = "Lasso Selection",
+                modifier = Modifier.size(20.dp),
+                tint = if (isLasso) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+        }
+
+        // Ink & Feel Live Popover Toggle
+        if (hasTuningControls) {
+            IconButton(
+                onClick = onOpenTuning,
+                colors = if (isTuningOpen) {
+                    IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                } else IconButtonDefaults.iconButtonColors(),
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Tune,
+                    contentDescription = "Ink & Pen Feel",
+                    modifier = Modifier.size(19.dp),
+                    tint = if (isTuningOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
+        }
+
+        // Insert Image
+        if (onInsertImage != null) {
+            IconButton(
+                onClick = onInsertImage,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AddPhotoAlternate,
+                    contentDescription = "Insert Image",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
+        }
+
+        if (isHorizontal) {
+            VerticalDivider(
+                modifier = Modifier.height(22.dp).padding(horizontal = 4.dp),
+                thickness = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)
+            )
+        } else {
+            HorizontalDivider(
+                modifier = Modifier.width(22.dp).padding(vertical = 4.dp),
+                thickness = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)
+            )
+        }
+
+        UndoRedoButtons(
+            canUndo = canUndo,
+            canRedo = canRedo,
+            onUndo = onUndo,
+            onRedo = onRedo,
+            isHorizontal = isHorizontal
+        )
+
+        Spacer(modifier = smallGapModifier)
+        ZoomIndicator(zoomScale = zoomScale, onResetZoom = onResetZoom)
+        Spacer(modifier = smallGapModifier)
+
+        IconButton(
+            onClick = { onSetCollapsed(true) },
+            modifier = Modifier.size(34.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.UnfoldLess,
+                contentDescription = "Collapse Toolbar",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                modifier = Modifier.size(19.dp)
             )
         }
     }

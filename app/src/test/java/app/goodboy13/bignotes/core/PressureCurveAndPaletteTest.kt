@@ -40,19 +40,21 @@ class PressureCurveAndPaletteTest {
 
     @Test
     fun testInkPaletteDefault_royalBlueAndCohesivePalette() {
-        // Canonical colors (used for both light and inverted dark mode via GL shader)
+        // Canonical colors (6 standard + editable custom slot 6)
         val colors = InkPalette.getColors()
-        assertEquals(6, colors.size)
+        assertEquals(7, colors.size)
         // Slot 3 is Royal Blue (#0018C8)
         assertEquals(0xFF0018C8L, colors[3].colorRgb)
         assertEquals("Royal Blue", colors[3].name)
+        assertEquals("Custom", colors[6].name)
 
-        // Highlighter palette: 3 curated colors
+        // Highlighter palette: 3 curated colors + editable custom slot 3
         val hlColors = InkPalette.getHighlighterColors()
-        assertEquals(3, hlColors.size)
+        assertEquals(4, hlColors.size)
         assertEquals("Canary Yellow", hlColors[0].name)
         assertEquals("Mint Green", hlColors[1].name)
         assertEquals("Coral Pink", hlColors[2].name)
+        assertEquals("Custom", hlColors[3].name)
     }
 
     @Test
