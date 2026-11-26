@@ -9,6 +9,7 @@ import app.goodboy13.bignotes.core.search.db.HandwritingSearchEntity
 import app.goodboy13.bignotes.core.search.db.SearchDatabase
 import app.goodboy13.bignotes.core.search.model.ModelDownloadStatus
 import app.goodboy13.bignotes.core.search.model.SearchHit
+import app.goodboy13.bignotes.core.search.model.StrokeCluster
 import app.goodboy13.bignotes.core.search.recognition.DigitalInkRecognitionEngine
 import app.goodboy13.bignotes.core.storage.BigNoteDocument
 import app.goodboy13.bignotes.core.storage.NoteStorageManager
@@ -17,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -38,6 +40,12 @@ class HandwritingSearchManager(
     private val searchDao: HandwritingSearchDao = SearchDatabase.getInstance(context).handwritingSearchDao()
 
     private val activeIndexingJobs = ConcurrentHashMap<String, Job>()
+    // Per-note cache mapping exact stroke-cluster signature -> recognized text to avoid re-running ML Kit on unchanged clusters
+    private val clusterTextCache = ConcurrentHashMap<String, MutableMap<String, String>>()
+    // Per-note seed cache from persisted RecognizedTextBlocks (matched by exact cluster bounds on first edit after load)
+    private val docBboxTextSeed = ConcurrentHashMap<String, MutableMap<String, String>>()
+    // Last indexed normalized cluster summary per note to skip identical Room/disk writes
+    private val lastIndexedSnapshots = ConcurrentHashMap<String, List<Pair<String, String>>>()
 
     val downloadStatus: StateFlow<ModelDownloadStatus> = recognitionEngine.downloadStatus
 
@@ -55,7 +63,9 @@ class HandwritingSearchManager(
      */
     suspend fun indexFromDocumentIfCached(folderId: String, doc: BigNoteDocument): Boolean = withContext(Dispatchers.IO) {
         if (doc.textBlocks.isEmpty()) return@withContext false
+        val seedMap = HashMap<String, String>(doc.textBlocks.size)
         val entities = doc.textBlocks.map { tb ->
+            seedMap[bboxKey(tb.minX, tb.minY, tb.maxX, tb.maxY)] = tb.text
             HandwritingSearchEntity(
                 clusterId = tb.clusterId,
                 noteId = doc.noteId,
@@ -68,6 +78,7 @@ class HandwritingSearchManager(
                 updatedAt = tb.updatedAt
             )
         }
+        docBboxTextSeed[doc.noteId] = seedMap
         searchDao.deleteForNote(doc.noteId)
         searchDao.insertAll(entities)
         Log.d(TAG, "Cached indexed ${entities.size} text blocks for note ${doc.noteId}")
@@ -75,32 +86,63 @@ class HandwritingSearchManager(
     }
 
     /**
-     * Clusters strokes and indexes recognized handwriting for the specified note asynchronously in the background.
-     * Persists recognized text blocks both in the Room search cache and back into the .bignote file.
+     * Clusters strokes and incrementally indexes recognized handwriting asynchronously in the background.
+     * Reuses cached recognition for unchanged clusters so only newly written/edited lines invoke ML Kit.
      */
-    fun indexNoteAsync(noteId: String, folderId: String, strokes: List<Stroke>) {
+    fun indexNoteAsync(
+        noteId: String,
+        folderId: String,
+        strokes: List<Stroke>,
+        debounceMs: Long = DEFAULT_INDEX_DEBOUNCE_MS
+    ) {
         activeIndexingJobs[noteId]?.cancel()
         val job = scope.launch {
             try {
+                if (debounceMs > 0L) {
+                    delay(debounceMs)
+                }
+
                 // 1. Spatially cluster ink strokes into lines/phrases
                 val clusters = withContext(Dispatchers.Default) {
                     StrokeClusterer.clusterStrokes(noteId, strokes)
                 }
 
                 if (clusters.isEmpty()) {
+                    clusterTextCache.remove(noteId)
+                    docBboxTextSeed.remove(noteId)
+                    if (lastIndexedSnapshots[noteId]?.isEmpty() == true) return@launch
+                    lastIndexedSnapshots[noteId] = emptyList()
                     searchDao.deleteForNote(noteId)
                     noteStorageManager.updateNoteTextBlocks(noteId, emptyList())
                     return@launch
                 }
 
-                // 2. Perform ML Kit recognition for each cluster
+                val noteSigCache = clusterTextCache[noteId]
+                val bboxSeed = docBboxTextSeed[noteId]
+                val nextSigCache = HashMap<String, String>(clusters.size)
+                val nextSnapshot = ArrayList<Pair<String, String>>(clusters.size)
+
+                // 2. Incrementally recognize ONLY new or modified clusters
                 val entities = mutableListOf<HandwritingSearchEntity>()
                 val textBlocks = mutableListOf<RecognizedTextBlock>()
                 val now = System.currentTimeMillis()
+                var mlKitCalls = 0
 
                 for (cluster in clusters) {
-                    val text = recognitionEngine.recognizeCluster(cluster)
+                    val sig = computeClusterSignature(cluster)
+                    val bKey = bboxKey(cluster.minX, cluster.minY, cluster.maxX, cluster.maxY)
+                    val cachedText = noteSigCache?.get(sig) ?: bboxSeed?.get(bKey)
+
+                    val text = if (cachedText != null) {
+                        cachedText
+                    } else {
+                        mlKitCalls++
+                        recognitionEngine.recognizeCluster(cluster)
+                    }
+
                     if (!text.isNullOrBlank()) {
+                        nextSigCache[sig] = text
+                        nextSnapshot.add(cluster.clusterId to text)
                         entities.add(
                             HandwritingSearchEntity(
                                 clusterId = cluster.clusterId,
@@ -125,18 +167,33 @@ class HandwritingSearchManager(
                                 updatedAt = now
                             )
                         )
+                    } else {
+                        // Cache empty recognition result for unchanged scribble clusters so we don't re-infer repeatedly
+                        if (text != null) {
+                            nextSigCache[sig] = ""
+                        }
                     }
                 }
+
+                clusterTextCache[noteId] = nextSigCache
+
+                val prevSnapshot = lastIndexedSnapshots[noteId]
+                if (mlKitCalls == 0 && prevSnapshot != null && prevSnapshot == nextSnapshot) {
+                    return@launch
+                }
+                lastIndexedSnapshots[noteId] = nextSnapshot
 
                 // 3. Atomically update the search database for this note
                 searchDao.deleteForNote(noteId)
                 if (entities.isNotEmpty()) {
                     searchDao.insertAll(entities)
-                    Log.d(TAG, "Indexed ${entities.size} handwriting clusters for note $noteId")
+                    Log.d(TAG, "Indexed ${entities.size} clusters ($mlKitCalls new ML Kit calls) for note $noteId")
                 }
 
-                // 4. Persist recognized text blocks into .bignote file
+                // 4. Persist recognized text blocks into .bignote file only when text content changed
                 noteStorageManager.updateNoteTextBlocks(noteId, textBlocks)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Error indexing note $noteId", e)
             } finally {
@@ -254,6 +311,10 @@ class HandwritingSearchManager(
     }
 
     suspend fun deleteNote(noteId: String) = withContext(Dispatchers.IO) {
+        activeIndexingJobs.remove(noteId)?.cancel()
+        clusterTextCache.remove(noteId)
+        docBboxTextSeed.remove(noteId)
+        lastIndexedSnapshots.remove(noteId)
         searchDao.deleteForNote(noteId)
     }
 
@@ -266,6 +327,29 @@ class HandwritingSearchManager(
     }
 
     companion object {
+        const val DEFAULT_INDEX_DEBOUNCE_MS = 5000L
+
+        internal fun computeClusterSignature(cluster: StrokeCluster): String {
+            val sb = StringBuilder(cluster.strokes.size * 28)
+            for (s in cluster.strokes) {
+                sb.append(s.id).append(':').append(s.points.size)
+                val first = s.points.firstOrNull()
+                val last = s.points.lastOrNull()
+                if (first != null && last != null) {
+                    sb.append(':')
+                        .append(first.x.toBits()).append(',').append(first.y.toBits())
+                        .append(',')
+                        .append(last.x.toBits()).append(',').append(last.y.toBits())
+                }
+                sb.append(';')
+            }
+            return sb.toString()
+        }
+
+        private fun bboxKey(minX: Float, minY: Float, maxX: Float, maxY: Float): String {
+            return "${minX.toBits()}:${minY.toBits()}:${maxX.toBits()}:${maxY.toBits()}"
+        }
+
         fun generateSnippet(fullText: String, query: String, windowSize: Int = 24): String {
             val idx = fullText.indexOf(query, ignoreCase = true)
             if (idx == -1) {

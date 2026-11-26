@@ -53,20 +53,23 @@ object StrokeClusterer {
             }
         }
 
-        // Cache stroke bounds and metrics for fast matching
+        // Cache stroke bounds and metrics sorted by minY for O(N log N) sweep-line pruning
         val metrics = candidateStrokes.map { stroke ->
             val h = max(12f, stroke.maxY - stroke.minY)
             val w = max(12f, stroke.maxX - stroke.minX)
             val cy = (stroke.minY + stroke.maxY) * 0.5f
             val cx = (stroke.minX + stroke.maxX) * 0.5f
             StrokeMetric(stroke, cy, cx, h, w)
-        }
+        }.sortedBy { it.stroke.minY }
 
-        // Compare strokes to link adjacent strokes on the same line
+        // Compare vertically overlapping strokes to link adjacent strokes on the same line
         for (i in 0 until n) {
             val a = metrics[i]
+            val aMaxYPlusTol = a.stroke.maxY + MAX_VERTICAL_GAP_TOLERANCE
             for (j in i + 1 until n) {
                 val b = metrics[j]
+                // Sorted by minY: once b.minY exceeds a.maxY + tolerance, no subsequent stroke can overlap vertically
+                if (b.stroke.minY > aMaxYPlusTol) break
 
                 // Check vertical overlap or vertical center distance
                 val verticalOverlap = min(a.stroke.maxY, b.stroke.maxY) - max(a.stroke.minY, b.stroke.minY)

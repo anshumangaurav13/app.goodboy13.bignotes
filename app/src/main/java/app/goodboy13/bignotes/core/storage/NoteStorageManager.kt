@@ -6,6 +6,11 @@ import app.goodboy13.bignotes.ui.model.NoteItem
 import java.io.File
 
 class NoteStorageManager(private val context: Context) {
+    private val cachedTextBlocks = java.util.concurrent.ConcurrentHashMap<String, List<RecognizedTextBlock>>()
+    private val indexLock = Any()
+    @Volatile
+    private var cachedNotesIndex: List<NoteItem>? = null
+
     private val notesDir: File
         get() = File(context.filesDir, "bignotes").apply { if (!exists()) mkdirs() }
 
@@ -105,8 +110,9 @@ class NoteStorageManager(private val context: Context) {
         val finalBlocks = if (textBlocks.isNotEmpty()) {
             textBlocks
         } else {
-            loadNote(note.id)?.textBlocks ?: emptyList()
+            cachedTextBlocks[note.id] ?: loadNote(note.id)?.textBlocks ?: emptyList()
         }
+        cachedTextBlocks[note.id] = finalBlocks
         val doc = BigNoteDocument(
             noteId = note.id,
             folderId = note.folderId,
@@ -138,13 +144,16 @@ class NoteStorageManager(private val context: Context) {
             maxY = maxY,
             strokeCount = count
         )
-        val currentIndex = loadNotesIndex() ?: emptyList()
-        val nextIndex = if (currentIndex.any { it.id == note.id }) {
-            currentIndex.map { if (it.id == note.id) updatedItem else it }
-        } else {
-            currentIndex + updatedItem
+        synchronized(indexLock) {
+            val currentIndex = cachedNotesIndex ?: loadNotesIndex() ?: emptyList()
+            val nextIndex = if (currentIndex.any { it.id == note.id }) {
+                currentIndex.map { if (it.id == note.id) updatedItem else it }
+            } else {
+                currentIndex + updatedItem
+            }
+            cachedNotesIndex = nextIndex
+            saveNotesIndex(nextIndex)
         }
-        saveNotesIndex(nextIndex)
 
         return file
     }
@@ -154,7 +163,9 @@ class NoteStorageManager(private val context: Context) {
         if (!file.exists()) return null
         return try {
             val bytes = file.readBytes()
-            BigNoteBinaryFormat.deserialize(bytes)
+            BigNoteBinaryFormat.deserialize(bytes)?.also { doc ->
+                cachedTextBlocks[noteId] = doc.textBlocks
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -162,13 +173,20 @@ class NoteStorageManager(private val context: Context) {
     }
 
     fun updateNoteTextBlocks(noteId: String, textBlocks: List<RecognizedTextBlock>): Boolean {
+        val cached = cachedTextBlocks[noteId]
+        if (cached != null && cached == textBlocks) return true
         val file = getFileForNote(noteId)
         if (!file.exists()) return false
         return try {
             val doc = loadNote(noteId) ?: return false
+            if (doc.textBlocks == textBlocks) {
+                cachedTextBlocks[noteId] = textBlocks
+                return true
+            }
             val updated = doc.copy(textBlocks = textBlocks)
             val bytes = BigNoteBinaryFormat.serialize(updated)
             file.writeBytes(bytes)
+            cachedTextBlocks[noteId] = textBlocks
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -179,10 +197,14 @@ class NoteStorageManager(private val context: Context) {
     fun deleteNote(noteId: String): Boolean {
         val file = getFileForNote(noteId)
         val deleted = if (file.exists()) file.delete() else true
-        val currentIndex = loadNotesIndex()
-        if (currentIndex != null) {
-            val updated = currentIndex.filter { it.id != noteId }
-            saveNotesIndex(updated)
+        cachedTextBlocks.remove(noteId)
+        synchronized(indexLock) {
+            val currentIndex = cachedNotesIndex ?: loadNotesIndex()
+            if (currentIndex != null) {
+                val updated = currentIndex.filter { it.id != noteId }
+                cachedNotesIndex = updated
+                saveNotesIndex(updated)
+            }
         }
         return deleted
     }
@@ -206,6 +228,7 @@ class NoteStorageManager(private val context: Context) {
     }
 
     fun saveNotesIndex(notes: List<NoteItem>) {
+        cachedNotesIndex = notes
         try {
             val jsonArray = org.json.JSONArray()
             for (n in notes) {
@@ -249,6 +272,7 @@ class NoteStorageManager(private val context: Context) {
                     )
                 )
             }
+            cachedNotesIndex = list
             list
         } catch (e: Exception) {
             e.printStackTrace()

@@ -106,4 +106,43 @@ class StrokeClustererTest {
         val shortSnippet = HandwritingSearchManager.generateSnippet(shortText, "Hello", windowSize = 20)
         assertEquals("Hello World", shortSnippet)
     }
+
+    @Test
+    fun testInterleavedYOrderClusteredIdentically() {
+        // Interleave top-line, bottom-line, and mid-line strokes out of vertical order
+        val top1 = createStroke(100f, 100f, 140f, 125f, time = 1000L)
+        val bot1 = createStroke(100f, 600f, 150f, 630f, time = 2000L)
+        val mid1 = createStroke(100f, 350f, 145f, 375f, time = 1500L)
+        val top2 = createStroke(155f, 102f, 200f, 128f, time = 1100L)
+        val bot2 = createStroke(165f, 605f, 210f, 628f, time = 2100L)
+
+        val clusters = StrokeClusterer.clusterStrokes("note_interleaved", listOf(bot1, top2, mid1, bot2, top1))
+        assertEquals(3, clusters.size)
+        assertEquals(2, clusters[0].strokes.size)
+        assertEquals(1, clusters[1].strokes.size)
+        assertEquals(2, clusters[2].strokes.size)
+    }
+
+    @Test
+    fun testClusterSignatureStableAndSensitiveToGeometryChanges() {
+        val base1 = createStroke(100f, 100f, 140f, 125f, time = 1000L)
+        val base2 = createStroke(150f, 102f, 195f, 126f, time = 1080L)
+        val baseCluster = StrokeClusterer.clusterStrokes("note_sig", listOf(base1, base2)).single()
+        val sigOriginal = HandwritingSearchManager.computeClusterSignature(baseCluster)
+
+        // Adding an unrelated line far below must keep line 1's cluster signature identical
+        val farLine = createStroke(100f, 500f, 200f, 530f, time = 3000L)
+        val clustersWithExtraLine = StrokeClusterer.clusterStrokes("note_sig", listOf(base1, base2, farLine))
+        assertEquals(2, clustersWithExtraLine.size)
+        val sigAfterUnrelatedEdit = HandwritingSearchManager.computeClusterSignature(clustersWithExtraLine[0])
+        assertEquals("Unchanged cluster must reuse exact signature", sigOriginal, sigAfterUnrelatedEdit)
+
+        // Modifying geometry (e.g. translated stroke preserving stroke ID) must invalidate signature
+        val movedBase2 = base2.copy(
+            points = base2.points.map { it.copy(x = it.x + 12f, y = it.y + 4f) }
+        )
+        val modifiedCluster = StrokeClusterer.clusterStrokes("note_sig", listOf(base1, movedBase2)).single()
+        val sigModified = HandwritingSearchManager.computeClusterSignature(modifiedCluster)
+        assertNotEquals("Translated cluster must invalidate cached signature", sigOriginal, sigModified)
+    }
 }
