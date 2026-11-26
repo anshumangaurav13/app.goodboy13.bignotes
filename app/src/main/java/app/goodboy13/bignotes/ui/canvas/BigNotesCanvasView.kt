@@ -85,6 +85,20 @@ private data class ColorPickerReticleState(
     val isVisible: Boolean = false
 )
 
+/**
+ * Isolates high-frequency transient UI overlay state (144Hz pan/zoom tick, 240Hz stylus hover/eraser reticle,
+ * lasso path) from the parent [BigNotesCanvasView] composition scope so updating overlays never triggers
+ * [AndroidView.update] or parent recompositions.
+ */
+private class CanvasOverlayState {
+    var reticle by mutableStateOf(ReticleState())
+    var hoverReticle by mutableStateOf(HoverReticleState())
+    var colorPickerReticle by mutableStateOf(ColorPickerReticleState())
+    var lassoPoints by mutableStateOf<List<PointF>>(emptyList())
+    var viewportTick by mutableIntStateOf(0)
+    var isScrolling by mutableStateOf(false)
+}
+
 @Composable
 fun BigNotesCanvasView(
     activeTool: ActiveTool,
@@ -129,17 +143,12 @@ fun BigNotesCanvasView(
     onDismissMathOverlay: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    var reticle by remember { mutableStateOf(ReticleState()) }
-    var hoverReticle by remember { mutableStateOf(HoverReticleState()) }
-    var colorPickerReticle by remember { mutableStateOf(ColorPickerReticleState()) }
+    val overlayState = remember { CanvasOverlayState() }
     var canvasViewRef by remember { mutableStateOf<SketchCanvasView?>(null) }
-    var lassoPoints by remember { mutableStateOf<List<PointF>>(emptyList()) }
     var selectedStrokes by remember { mutableStateOf<List<Stroke>>(emptyList()) }
     var selectionBounds by remember { mutableStateOf<RectF?>(null) }
     var selectionDragDx by remember { mutableFloatStateOf(0f) }
     var selectionDragDy by remember { mutableFloatStateOf(0f) }
-    var viewportTick by remember { mutableIntStateOf(0) }
-    var isScrolling by remember { mutableStateOf(false) }
 
     var internalSelectedImage by remember { mutableStateOf<app.goodboy13.bignotes.core.model.CanvasImage?>(null) }
     val effectiveSelectedImage = selectedImage ?: internalSelectedImage
@@ -184,27 +193,27 @@ fun BigNotesCanvasView(
                     this.onUndoRedoStateChanged = onUndoRedoStateChanged
                     this.onViewportChanged = { zoom, _, _, _ ->
                         onZoomChanged(zoom)
-                        viewportTick++
+                        overlayState.viewportTick++
                     }
                     this.onScrollActiveChanged = { scrolling ->
-                        isScrolling = scrolling
+                        overlayState.isScrolling = scrolling
                     }
                     this.onStrokesChanged = onStrokesChanged
                     this.onPenContactChanged = onPenContactChanged
                     this.onEraserReticleChanged = { sx, sy, radius, _, isVisible ->
-                        reticle = ReticleState(sx, sy, radius, isVisible)
+                        overlayState.reticle = ReticleState(sx, sy, radius, isVisible)
                     }
                     this.onHoverReticleChanged = { sx, sy, radius, tool, isPrecision, isVisible ->
-                        hoverReticle = HoverReticleState(sx, sy, radius, tool, isPrecision, isVisible)
+                        overlayState.hoverReticle = HoverReticleState(sx, sy, radius, tool, isPrecision, isVisible)
                     }
                     this.onColorPickerReticleChanged = { sx, sy, colorRgb, isVisible ->
-                        colorPickerReticle = ColorPickerReticleState(sx, sy, colorRgb, isVisible)
+                        overlayState.colorPickerReticle = ColorPickerReticleState(sx, sy, colorRgb, isVisible)
                     }
                     this.onColorPicked = { sampled ->
                         onColorPicked?.invoke(sampled)
                     }
                     this.onLassoPathChanged = { pts ->
-                        lassoPoints = pts
+                        overlayState.lassoPoints = pts
                     }
                     this.onSelectionChanged = { strokes, bounds ->
                         selectedStrokes = strokes
@@ -268,297 +277,42 @@ fun BigNotesCanvasView(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 1. Eraser Cursor Reticle Overlay
-        if (reticle.isVisible && reticle.radius > 0f) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val centerOffset = Offset(reticle.screenX, reticle.screenY)
-                val outerRadius = reticle.radius
-                // High-contrast dual stroke: dark outer border + light inner border for visibility on any paper background
-                drawCircle(
-                    color = Color.Black.copy(alpha = 0.65f),
-                    radius = outerRadius,
-                    center = centerOffset,
-                    style = DrawStroke(width = 2.dp.toPx())
-                )
-                if (outerRadius > 2.dp.toPx()) {
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.85f),
-                        radius = outerRadius - 1.dp.toPx(),
-                        center = centerOffset,
-                        style = DrawStroke(width = 1.dp.toPx())
-                    )
-                }
-                // Center point indicator
-                drawCircle(
-                    color = Color.Black.copy(alpha = 0.75f),
-                    radius = 2.dp.toPx(),
-                    center = centerOffset
-                )
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.85f),
-                    radius = 1.dp.toPx(),
-                    center = centerOffset
-                )
-            }
-        }
+        // 1. Eraser Cursor Reticle Overlay (isolated recomposition scope)
+        EraserReticleOverlay(overlayState = overlayState)
 
-        // 1b. Live Hover Tool Logo Cursor Overlay (Tip aligned directly at target point, just like a mouse cursor)
-        if (hoverReticle.isVisible && hoverCursorEnabled) {
-            val isEraser = hoverReticle.isPrecisionEraser ||
-                    hoverReticle.tool == ActiveTool.PRECISION_ERASER ||
-                    hoverReticle.tool == ActiveTool.WHOLE_STROKE_ERASER
+        // 1b. Live Hover Tool Logo Cursor Overlay (isolated recomposition scope)
+        HoverReticleOverlay(
+            overlayState = overlayState,
+            hoverCursorEnabled = hoverCursorEnabled,
+            hoverCursorOrientation = hoverCursorOrientation
+        )
 
-            // Rotation angle: 4 diagonal orientations for all non-eraser tools, standard 45° for erasers
-            val rotationDegrees = if (isEraser) 45f else hoverCursorOrientation.degrees
+        // 1c. Live Eyedropper Loupe & Swatch Ring Overlay (isolated recomposition scope)
+        ColorPickerReticleOverlay(overlayState = overlayState)
 
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                withTransform({
-                    translate(hoverReticle.screenX, hoverReticle.screenY)
-                    rotate(rotationDegrees, pivot = Offset.Zero)
-                }) {
-                    drawHoverToolCursor(
-                        tool = hoverReticle.tool,
-                        isPrecisionEraser = hoverReticle.isPrecisionEraser
-                    )
-                }
-            }
-        } else if (hoverReticle.isVisible && !hoverCursorEnabled && !hoverReticle.isPrecisionEraser) {
-            // When hover logo cursor is disabled, show subtle pinpoint landing micro-dot for drawing tools
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val center = Offset(hoverReticle.screenX, hoverReticle.screenY)
-                drawCircle(color = Color.Black.copy(alpha = 0.65f), radius = 2.dp.toPx(), center = center)
-                drawCircle(color = Color.White.copy(alpha = 0.90f), radius = 1.2.dp.toPx(), center = center)
-            }
-        }
-
-        // 1c. Live Eyedropper Loupe & Swatch Ring Overlay
-        if (colorPickerReticle.isVisible) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val center = Offset(colorPickerReticle.screenX, colorPickerReticle.screenY)
-                val sampled = Color((colorPickerReticle.colorRgb or 0xFF000000L).toInt())
-                val ringRadius = 26.dp.toPx()
-                drawCircle(
-                    color = sampled,
-                    radius = ringRadius,
-                    center = center,
-                    style = DrawStroke(width = 6.dp.toPx())
-                )
-                drawCircle(
-                    color = Color.White,
-                    radius = ringRadius + 3.dp.toPx(),
-                    center = center,
-                    style = DrawStroke(width = 1.5.dp.toPx())
-                )
-                drawCircle(
-                    color = Color.Black.copy(alpha = 0.65f),
-                    radius = 4.dp.toPx(),
-                    center = center,
-                    style = DrawStroke(width = 1.5.dp.toPx())
-                )
-            }
-        }
-
-        // 2. Active Lasso Trail Overlay
-        if (lassoPoints.size >= 2) {
-            val view = canvasViewRef
-            if (view != null) {
-                @Suppress("UNUSED_VARIABLE")
-                val tick = viewportTick
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val path = Path()
-                    var first = true
-                    for (pt in lassoPoints) {
-                        val (sx, sy) = view.worldToScreen(pt.x, pt.y)
-                        if (first) {
-                            path.moveTo(sx, sy)
-                            first = false
-                        } else {
-                            path.lineTo(sx, sy)
-                        }
-                    }
-                    drawPath(
-                        path = path,
-                        color = Color(0xFF1E88E5),
-                        style = DrawStroke(
-                            width = 2.dp.toPx(),
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
-                        )
-                    )
-                }
-            }
-        }
+        // 2. Active Lasso Trail Overlay (isolated recomposition scope)
+        LassoTrailOverlay(overlayState = overlayState, canvasView = canvasViewRef)
 
         val reducedMotion = rememberReducedMotion()
 
-        // 3. Lasso Selection Marquee & Floating Action Pill
-        val bounds = selectionBounds
-        val view = canvasViewRef
-        val isLassoVisible = bounds != null && selectedStrokes.isNotEmpty() && view != null
-        var lastPillOffset by remember { mutableStateOf(Pair(0.dp, 0.dp)) }
-
-        if (isLassoVisible) {
-            @Suppress("UNUSED_VARIABLE")
-            val tick = viewportTick
-            val (sLeft, sTop) = view.worldToScreen(bounds.left + selectionDragDx, bounds.top + selectionDragDy)
-            val (sRight, sBottom) = view.worldToScreen(bounds.right + selectionDragDx, bounds.bottom + selectionDragDy)
-
-            val left = minOf(sLeft, sRight)
-            val right = maxOf(sLeft, sRight)
-            val top = minOf(sTop, sBottom)
-            val bottom = maxOf(sTop, sBottom)
-            val boxWidth = right - left
-            val boxHeight = bottom - top
-
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                // Subtle shaded interior
-                drawRect(
-                    color = Color(0xFF1E88E5).copy(alpha = 0.07f),
-                    topLeft = Offset(left, top),
-                    size = Size(boxWidth, boxHeight)
-                )
-
-                // Dashed marquee border
-                drawRect(
-                    color = Color(0xFF1E88E5),
-                    topLeft = Offset(left, top),
-                    size = Size(boxWidth, boxHeight),
-                    style = DrawStroke(
-                        width = 1.5.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
-                    )
-                )
-
-                // Corner anchor circles
-                val handleRadius = 4.dp.toPx()
-                val corners = listOf(
-                    Offset(left, top),
-                    Offset(right, top),
-                    Offset(left, bottom),
-                    Offset(right, bottom)
-                )
-                for (corner in corners) {
-                    drawCircle(color = Color.White, radius = handleRadius, center = corner)
-                    drawCircle(
-                        color = Color(0xFF1E88E5),
-                        radius = handleRadius,
-                        center = corner,
-                        style = DrawStroke(width = 1.5.dp.toPx())
-                    )
-                }
-            }
-
-            // Floating action pill centered above (or below) selection box
-            val density = LocalDensity.current
-            val screenConfig = LocalConfiguration.current
-            val pillHeightDp = 36.dp
-            val pillHeightPx = with(density) { pillHeightDp.toPx() }
-            val pillY = if (top > pillHeightPx + 14f) {
-                top - pillHeightPx - 8f
-            } else {
-                bottom + 8f
-            }
-            val pillCenterX = (left + right) * 0.5f
-            val pillXDp = with(density) { (pillCenterX - 75f).toDp() }
-            val pillYDp = with(density) { pillY.toDp() }
-
-            val minXDp = 8.dp
-            val maxXDp = (screenConfig.screenWidthDp - 170).dp
-            val clampedXDp = pillXDp.coerceIn(minXDp, maxOf(minXDp, maxXDp))
-            val clampedYDp = pillYDp.coerceAtLeast(8.dp)
-            lastPillOffset = Pair(clampedXDp, clampedYDp)
-        }
-
-        AnimatedVisibility(
-            visible = isLassoVisible,
-            enter = fadeIn(BigNotesMotion.enterTween(160, reducedMotion)) +
-                scaleIn(initialScale = 0.90f, animationSpec = BigNotesMotion.enterTween(180, reducedMotion)),
-            exit = fadeOut(BigNotesMotion.exitTween(120, reducedMotion)) +
-                scaleOut(targetScale = 0.94f, animationSpec = BigNotesMotion.exitTween(120, reducedMotion)),
-            modifier = Modifier.offset(x = lastPillOffset.first, y = lastPillOffset.second)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
-                tonalElevation = 6.dp,
-                shadowElevation = 4.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
-                modifier = Modifier.height(36.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier.padding(horizontal = 6.dp)
-                ) {
-                    IconButton(
-                        onClick = { onCopySelectedStrokesAsText?.invoke(selectedStrokes) },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.TextFields,
-                            contentDescription = "Copy as Text",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    if (onSolveMathSelectedStrokes != null) {
-                        IconButton(
-                            onClick = { onSolveMathSelectedStrokes.invoke(selectedStrokes) },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Calculate,
-                                contentDescription = "Solve Math",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-
-                    IconButton(
-                        onClick = { view?.duplicateSelection() },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Duplicate Selection",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { view?.deleteSelection() },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete Selection",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { view?.clearSelection() },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Deselect",
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
-        }
+        // 3. Lasso Selection Marquee & Floating Action Pill (isolated recomposition scope)
+        SelectionMarqueeOverlay(
+            selectedStrokes = selectedStrokes,
+            selectionBounds = selectionBounds,
+            selectionDragDx = selectionDragDx,
+            selectionDragDy = selectionDragDy,
+            view = canvasViewRef,
+            viewportTickProvider = { overlayState.viewportTick },
+            reducedMotion = reducedMotion,
+            onCopySelectedStrokesAsText = onCopySelectedStrokesAsText,
+            onSolveMathSelectedStrokes = onSolveMathSelectedStrokes
+        )
 
         // 3.4. Math Result Overlay
         MathResultOverlay(
             overlayState = mathOverlayState,
             canvasView = canvasViewRef,
-            viewportTick = viewportTick,
+            viewportTickProvider = { overlayState.viewportTick },
             onInsertAnswer = { onInsertMathAnswer?.invoke() },
             onCopyAnswer = { onCopyMathAnswer?.invoke() },
             onDismiss = { onDismissMathOverlay?.invoke() }
@@ -568,7 +322,7 @@ fun BigNotesCanvasView(
         ImageManipulationOverlay(
             selectedImage = effectiveSelectedImage,
             canvasView = canvasViewRef,
-            viewportTick = viewportTick,
+            viewportTickProvider = { overlayState.viewportTick },
             onUpdateImageLive = { updated ->
                 updateSelectedImage(updated)
                 canvasViewRef?.updateImageLive(updated)
@@ -596,126 +350,26 @@ fun BigNotesCanvasView(
             }
         )
 
-        // 3.8. Active Search Hit Visual Highlight Box
-        val searchView = canvasViewRef
-        val hit = activeSearchHit
-        val isSearchHitVisible = searchView != null && hit != null && isCanvasEnabled
-        var lastSearchBadgeOffset by remember { mutableStateOf(Pair(8.dp, 8.dp)) }
-        var lastSearchText by remember { mutableStateOf("") }
+        // 3.8. Active Search Hit Visual Highlight Box (isolated recomposition scope)
+        SearchHitOverlay(
+            searchView = canvasViewRef,
+            hit = activeSearchHit,
+            isCanvasEnabled = isCanvasEnabled,
+            viewOffsetY = viewOffsetY,
+            viewportTickProvider = { overlayState.viewportTick },
+            reducedMotion = reducedMotion,
+            onDismissSearchHit = onDismissSearchHit
+        )
 
-        if (isSearchHitVisible) {
-            @Suppress("UNUSED_VARIABLE")
-            val tick = viewportTick
-            val (screenMinX, screenMinY) = searchView.worldToScreen(hit.minX, hit.minY)
-            val (screenMaxX, screenMaxY) = searchView.worldToScreen(hit.maxX, hit.maxY)
-            val left = minOf(screenMinX, screenMaxX) - 10f
-            val top = minOf(screenMinY, screenMaxY) - 8f
-            val right = maxOf(screenMinX, screenMaxX) + 10f
-            val bottom = maxOf(screenMinY, screenMaxY) + 8f
-            val boxWidth = maxOf(20f, right - left)
-            val boxHeight = maxOf(20f, bottom - top)
-
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawRoundRect(
-                    color = Color(0xFFFFB74D).copy(alpha = 0.28f),
-                    topLeft = Offset(left, top),
-                    size = Size(boxWidth, boxHeight),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx(), 10.dp.toPx())
-                )
-                drawRoundRect(
-                    color = Color(0xFFF57C00).copy(alpha = 0.85f),
-                    topLeft = Offset(left, top),
-                    size = Size(boxWidth, boxHeight),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx(), 10.dp.toPx()),
-                    style = DrawStroke(
-                        width = 2.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(16f, 10f), 0f)
-                    )
-                )
-            }
-
-            // Floating badge above the matched handwriting cluster
-            val density = LocalDensity.current
-            val badgeXDp = with(density) { left.coerceAtLeast(8f).toDp() }
-            val badgeYDp = with(density) { (top - 36f).coerceAtLeast(viewOffsetY + 8f).toDp() }
-            lastSearchBadgeOffset = Pair(badgeXDp, badgeYDp)
-            lastSearchText = hit.matchedText
-        }
-
-        AnimatedVisibility(
-            visible = isSearchHitVisible,
-            enter = fadeIn(BigNotesMotion.enterTween(170, reducedMotion)) +
-                scaleIn(initialScale = 0.90f, animationSpec = BigNotesMotion.enterTween(190, reducedMotion)),
-            exit = fadeOut(BigNotesMotion.exitTween(120, reducedMotion)) +
-                scaleOut(targetScale = 0.94f, animationSpec = BigNotesMotion.exitTween(120, reducedMotion)),
-            modifier = Modifier.offset(x = lastSearchBadgeOffset.first, y = lastSearchBadgeOffset.second)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                border = BorderStroke(1.dp, Color(0xFFF57C00).copy(alpha = 0.6f)),
-                shadowElevation = 6.dp
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = null,
-                        tint = Color(0xFFF57C00),
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = lastSearchText,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 11.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    IconButton(
-                        onClick = { onDismissSearchHit?.invoke() },
-                        modifier = Modifier.size(18.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Dismiss Highlight",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // 4. Vertical Fast Scrollbar Overlay on Right Edge
-        val canvasView = canvasViewRef
-        if (canvasView != null && isCanvasEnabled) {
-            @Suppress("UNUSED_VARIABLE")
-            val tick = viewportTick
-            val scrollInfo = canvasView.getVerticalScrollInfo()
-            val topOffsetDp = with(LocalDensity.current) { viewOffsetY.toDp() + 8.dp }
-
-            CanvasVerticalScrollbar(
-                isScrolling = isScrolling,
-                scrollFraction = scrollInfo.scrollFraction,
-                thumbRatio = scrollInfo.thumbRatio,
-                currentScrollWorldY = scrollInfo.currentScrollWorldY,
-                worldPageHeight = worldPageHeight,
-                onScrollToFraction = { fraction ->
-                    canvasView.scrollToFraction(fraction)
-                },
-                onScrubbingFinished = {
-                    canvasView.finishScrollScrubbing()
-                },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = topOffsetDp, bottom = 16.dp)
-            )
-        }
+        // 4. Vertical Fast Scrollbar Overlay on Right Edge (isolated recomposition scope)
+        CanvasScrollbarOverlay(
+            overlayState = overlayState,
+            canvasView = canvasViewRef,
+            isCanvasEnabled = isCanvasEnabled,
+            viewOffsetY = viewOffsetY,
+            worldPageHeight = worldPageHeight,
+            modifier = Modifier.align(Alignment.TopEnd)
+        )
 
         // 5. Disabled Canvas Empty State / Call-to-Action Placeholder
         AnimatedVisibility(
@@ -1161,4 +815,436 @@ private fun DrawScope.drawHoverToolCursor(
     // 3. Pinpoint microdot at the exact tip coordinate (0, 0)
     drawCircle(color = Color.Black.copy(alpha = 0.75f), radius = 1.8.dp.toPx(), center = Offset.Zero)
     drawCircle(color = Color.White.copy(alpha = 0.95f), radius = 1.0.dp.toPx(), center = Offset.Zero)
+}
+
+@Composable
+private fun EraserReticleOverlay(overlayState: CanvasOverlayState) {
+    val reticle = overlayState.reticle
+    if (!reticle.isVisible || reticle.radius <= 0f) return
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val centerOffset = Offset(reticle.screenX, reticle.screenY)
+        val outerRadius = reticle.radius
+        drawCircle(
+            color = Color.Black.copy(alpha = 0.65f),
+            radius = outerRadius,
+            center = centerOffset,
+            style = DrawStroke(width = 2.dp.toPx())
+        )
+        if (outerRadius > 2.dp.toPx()) {
+            drawCircle(
+                color = Color.White.copy(alpha = 0.85f),
+                radius = outerRadius - 1.dp.toPx(),
+                center = centerOffset,
+                style = DrawStroke(width = 1.dp.toPx())
+            )
+        }
+        drawCircle(
+            color = Color.Black.copy(alpha = 0.75f),
+            radius = 2.dp.toPx(),
+            center = centerOffset
+        )
+        drawCircle(
+            color = Color.White.copy(alpha = 0.85f),
+            radius = 1.dp.toPx(),
+            center = centerOffset
+        )
+    }
+}
+
+@Composable
+private fun HoverReticleOverlay(
+    overlayState: CanvasOverlayState,
+    hoverCursorEnabled: Boolean,
+    hoverCursorOrientation: HoverCursorOrientation
+) {
+    val hoverReticle = overlayState.hoverReticle
+    if (!hoverReticle.isVisible) return
+
+    if (hoverCursorEnabled) {
+        val isEraser = hoverReticle.isPrecisionEraser ||
+            hoverReticle.tool == ActiveTool.PRECISION_ERASER ||
+            hoverReticle.tool == ActiveTool.WHOLE_STROKE_ERASER
+        val rotationDegrees = if (isEraser) 45f else hoverCursorOrientation.degrees
+
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            withTransform({
+                translate(hoverReticle.screenX, hoverReticle.screenY)
+                rotate(rotationDegrees, pivot = Offset.Zero)
+            }) {
+                drawHoverToolCursor(
+                    tool = hoverReticle.tool,
+                    isPrecisionEraser = hoverReticle.isPrecisionEraser
+                )
+            }
+        }
+    } else if (!hoverReticle.isPrecisionEraser) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = Offset(hoverReticle.screenX, hoverReticle.screenY)
+            drawCircle(color = Color.Black.copy(alpha = 0.65f), radius = 2.dp.toPx(), center = center)
+            drawCircle(color = Color.White.copy(alpha = 0.90f), radius = 1.2.dp.toPx(), center = center)
+        }
+    }
+}
+
+@Composable
+private fun ColorPickerReticleOverlay(overlayState: CanvasOverlayState) {
+    val colorPickerReticle = overlayState.colorPickerReticle
+    if (!colorPickerReticle.isVisible) return
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val center = Offset(colorPickerReticle.screenX, colorPickerReticle.screenY)
+        val sampled = Color((colorPickerReticle.colorRgb or 0xFF000000L).toInt())
+        val ringRadius = 26.dp.toPx()
+        drawCircle(
+            color = sampled,
+            radius = ringRadius,
+            center = center,
+            style = DrawStroke(width = 6.dp.toPx())
+        )
+        drawCircle(
+            color = Color.White,
+            radius = ringRadius + 3.dp.toPx(),
+            center = center,
+            style = DrawStroke(width = 1.5.dp.toPx())
+        )
+        drawCircle(
+            color = Color.Black.copy(alpha = 0.65f),
+            radius = 4.dp.toPx(),
+            center = center,
+            style = DrawStroke(width = 1.5.dp.toPx())
+        )
+    }
+}
+
+@Composable
+private fun LassoTrailOverlay(
+    overlayState: CanvasOverlayState,
+    canvasView: SketchCanvasView?
+) {
+    val lassoPoints = overlayState.lassoPoints
+    if (lassoPoints.size < 2 || canvasView == null) return
+    @Suppress("UNUSED_VARIABLE")
+    val tick = overlayState.viewportTick
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val path = Path()
+        var first = true
+        for (pt in lassoPoints) {
+            val (sx, sy) = canvasView.worldToScreen(pt.x, pt.y)
+            if (first) {
+                path.moveTo(sx, sy)
+                first = false
+            } else {
+                path.lineTo(sx, sy)
+            }
+        }
+        drawPath(
+            path = path,
+            color = Color(0xFF1E88E5),
+            style = DrawStroke(
+                width = 2.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
+            )
+        )
+    }
+}
+
+@Composable
+private fun SelectionMarqueeOverlay(
+    selectedStrokes: List<Stroke>,
+    selectionBounds: RectF?,
+    selectionDragDx: Float,
+    selectionDragDy: Float,
+    view: SketchCanvasView?,
+    viewportTickProvider: () -> Int,
+    reducedMotion: Boolean,
+    onCopySelectedStrokesAsText: ((List<Stroke>) -> Unit)?,
+    onSolveMathSelectedStrokes: ((List<Stroke>) -> Unit)?
+) {
+    val bounds = selectionBounds
+    val isLassoVisible = bounds != null && selectedStrokes.isNotEmpty() && view != null
+    var lastPillOffset by remember { mutableStateOf(Pair(0.dp, 0.dp)) }
+
+    if (isLassoVisible) {
+        @Suppress("UNUSED_VARIABLE")
+        val tick = viewportTickProvider()
+        val (sLeft, sTop) = view.worldToScreen(bounds.left + selectionDragDx, bounds.top + selectionDragDy)
+        val (sRight, sBottom) = view.worldToScreen(bounds.right + selectionDragDx, bounds.bottom + selectionDragDy)
+
+        val left = minOf(sLeft, sRight)
+        val right = maxOf(sLeft, sRight)
+        val top = minOf(sTop, sBottom)
+        val bottom = maxOf(sTop, sBottom)
+        val boxWidth = right - left
+        val boxHeight = bottom - top
+
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(
+                color = Color(0xFF1E88E5).copy(alpha = 0.07f),
+                topLeft = Offset(left, top),
+                size = Size(boxWidth, boxHeight)
+            )
+            drawRect(
+                color = Color(0xFF1E88E5),
+                topLeft = Offset(left, top),
+                size = Size(boxWidth, boxHeight),
+                style = DrawStroke(
+                    width = 1.5.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
+                )
+            )
+            val handleRadius = 4.dp.toPx()
+            val corners = listOf(
+                Offset(left, top),
+                Offset(right, top),
+                Offset(left, bottom),
+                Offset(right, bottom)
+            )
+            for (corner in corners) {
+                drawCircle(color = Color.White, radius = handleRadius, center = corner)
+                drawCircle(
+                    color = Color(0xFF1E88E5),
+                    radius = handleRadius,
+                    center = corner,
+                    style = DrawStroke(width = 1.5.dp.toPx())
+                )
+            }
+        }
+
+        val density = LocalDensity.current
+        val screenConfig = LocalConfiguration.current
+        val pillHeightDp = 36.dp
+        val pillHeightPx = with(density) { pillHeightDp.toPx() }
+        val pillY = if (top > pillHeightPx + 14f) {
+            top - pillHeightPx - 8f
+        } else {
+            bottom + 8f
+        }
+        val pillCenterX = (left + right) * 0.5f
+        val pillXDp = with(density) { (pillCenterX - 75f).toDp() }
+        val pillYDp = with(density) { pillY.toDp() }
+
+        val minXDp = 8.dp
+        val maxXDp = (screenConfig.screenWidthDp - 170).dp
+        val clampedXDp = pillXDp.coerceIn(minXDp, maxOf(minXDp, maxXDp))
+        val clampedYDp = pillYDp.coerceAtLeast(8.dp)
+        lastPillOffset = Pair(clampedXDp, clampedYDp)
+    }
+
+    AnimatedVisibility(
+        visible = isLassoVisible,
+        enter = fadeIn(BigNotesMotion.enterTween(160, reducedMotion)) +
+            scaleIn(initialScale = 0.90f, animationSpec = BigNotesMotion.enterTween(180, reducedMotion)),
+        exit = fadeOut(BigNotesMotion.exitTween(120, reducedMotion)) +
+            scaleOut(targetScale = 0.94f, animationSpec = BigNotesMotion.exitTween(120, reducedMotion)),
+        modifier = Modifier.offset(x = lastPillOffset.first, y = lastPillOffset.second)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
+            tonalElevation = 6.dp,
+            shadowElevation = 4.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+            modifier = Modifier.height(36.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.padding(horizontal = 6.dp)
+            ) {
+                IconButton(
+                    onClick = { onCopySelectedStrokesAsText?.invoke(selectedStrokes) },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.TextFields,
+                        contentDescription = "Copy as Text",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                if (onSolveMathSelectedStrokes != null) {
+                    IconButton(
+                        onClick = { onSolveMathSelectedStrokes.invoke(selectedStrokes) },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Calculate,
+                            contentDescription = "Solve Math",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = { view?.duplicateSelection() },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Duplicate Selection",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = { view?.deleteSelection() },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete Selection",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = { view?.clearSelection() },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Deselect",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchHitOverlay(
+    searchView: SketchCanvasView?,
+    hit: app.goodboy13.bignotes.core.search.model.SearchHit?,
+    isCanvasEnabled: Boolean,
+    viewOffsetY: Float,
+    viewportTickProvider: () -> Int,
+    reducedMotion: Boolean,
+    onDismissSearchHit: (() -> Unit)?
+) {
+    val isSearchHitVisible = searchView != null && hit != null && isCanvasEnabled
+    var lastSearchBadgeOffset by remember { mutableStateOf(Pair(8.dp, 8.dp)) }
+    var lastSearchText by remember { mutableStateOf("") }
+
+    if (isSearchHitVisible) {
+        @Suppress("UNUSED_VARIABLE")
+        val tick = viewportTickProvider()
+        val (screenMinX, screenMinY) = searchView.worldToScreen(hit.minX, hit.minY)
+        val (screenMaxX, screenMaxY) = searchView.worldToScreen(hit.maxX, hit.maxY)
+        val left = minOf(screenMinX, screenMaxX) - 10f
+        val top = minOf(screenMinY, screenMaxY) - 8f
+        val right = maxOf(screenMinX, screenMaxX) + 10f
+        val bottom = maxOf(screenMinY, screenMaxY) + 8f
+        val boxWidth = maxOf(20f, right - left)
+        val boxHeight = maxOf(20f, bottom - top)
+
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRoundRect(
+                color = Color(0xFFFFB74D).copy(alpha = 0.28f),
+                topLeft = Offset(left, top),
+                size = Size(boxWidth, boxHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx(), 10.dp.toPx())
+            )
+            drawRoundRect(
+                color = Color(0xFFF57C00).copy(alpha = 0.85f),
+                topLeft = Offset(left, top),
+                size = Size(boxWidth, boxHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx(), 10.dp.toPx()),
+                style = DrawStroke(
+                    width = 2.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(16f, 10f), 0f)
+                )
+            )
+        }
+
+        val density = LocalDensity.current
+        val badgeXDp = with(density) { left.coerceAtLeast(8f).toDp() }
+        val badgeYDp = with(density) { (top - 36f).coerceAtLeast(viewOffsetY + 8f).toDp() }
+        lastSearchBadgeOffset = Pair(badgeXDp, badgeYDp)
+        lastSearchText = hit.matchedText
+    }
+
+    AnimatedVisibility(
+        visible = isSearchHitVisible,
+        enter = fadeIn(BigNotesMotion.enterTween(170, reducedMotion)) +
+            scaleIn(initialScale = 0.90f, animationSpec = BigNotesMotion.enterTween(190, reducedMotion)),
+        exit = fadeOut(BigNotesMotion.exitTween(120, reducedMotion)) +
+            scaleOut(targetScale = 0.94f, animationSpec = BigNotesMotion.exitTween(120, reducedMotion)),
+        modifier = Modifier.offset(x = lastSearchBadgeOffset.first, y = lastSearchBadgeOffset.second)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            border = BorderStroke(1.dp, Color(0xFFF57C00).copy(alpha = 0.6f)),
+            shadowElevation = 6.dp
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = Color(0xFFF57C00),
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = lastSearchText,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                IconButton(
+                    onClick = { onDismissSearchHit?.invoke() },
+                    modifier = Modifier.size(18.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss Highlight",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CanvasScrollbarOverlay(
+    overlayState: CanvasOverlayState,
+    canvasView: SketchCanvasView?,
+    isCanvasEnabled: Boolean,
+    viewOffsetY: Float,
+    worldPageHeight: Float,
+    modifier: Modifier = Modifier
+) {
+    if (canvasView == null || !isCanvasEnabled) return
+    @Suppress("UNUSED_VARIABLE")
+    val tick = overlayState.viewportTick
+    val scrollInfo = canvasView.getVerticalScrollInfo()
+    val topOffsetDp = with(LocalDensity.current) { viewOffsetY.toDp() + 8.dp }
+
+    CanvasVerticalScrollbar(
+        isScrolling = overlayState.isScrolling,
+        scrollFraction = scrollInfo.scrollFraction,
+        thumbRatio = scrollInfo.thumbRatio,
+        currentScrollWorldY = scrollInfo.currentScrollWorldY,
+        worldPageHeight = worldPageHeight,
+        onScrollToFraction = { fraction ->
+            canvasView.scrollToFraction(fraction)
+        },
+        onScrubbingFinished = {
+            canvasView.finishScrollScrubbing()
+        },
+        modifier = modifier.padding(top = topOffsetDp, bottom = 16.dp)
+    )
 }

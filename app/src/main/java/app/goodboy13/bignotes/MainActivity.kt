@@ -471,7 +471,7 @@ fun BigNotesMainScreen(
                 if (doc.textBlocks.isNotEmpty()) {
                     handwritingSearchManager.indexFromDocumentIfCached(note.folderId, doc)
                 } else if (doc.strokes.isNotEmpty()) {
-                    handwritingSearchManager.indexNoteAsync(note.id, note.folderId, doc.strokes)
+                    handwritingSearchManager.indexNoteAsync(note.id, note.folderId, doc.strokes, debounceMs = 0L)
                 }
             }
         }
@@ -533,7 +533,7 @@ fun BigNotesMainScreen(
     val autoSaveCoordinator = remember {
         AutoSaveCoordinator(
             scope = coroutineScope,
-            debounceDelayMs = 1000L,
+            debounceDelayMs = 2500L,
             onPerformSave = { nId -> performSaveNote(nId) }
         )
     }
@@ -971,7 +971,9 @@ fun BigNotesMainScreen(
                 canRedo = redo
             },
             onZoomChanged = { zoom ->
-                zoomScale = zoom
+                if (kotlin.math.abs(zoomScale - zoom) > 0.002f) {
+                    zoomScale = zoom
+                }
             },
             onCanvasBound = { boundView ->
                 canvasView = boundView
@@ -1011,11 +1013,6 @@ fun BigNotesMainScreen(
             onStrokesChanged = { strokes ->
                 selectedNoteId?.let { id ->
                     noteStrokes[id] = strokes
-                    allNotes = allNotes.map { note ->
-                        if (note.id == id) {
-                            note.copy(updatedAt = System.currentTimeMillis())
-                        } else note
-                    }
                     autoSaveCoordinator.markDirty(id)
                 }
             },
@@ -1473,7 +1470,6 @@ fun BigNotesMainScreen(
                             coroutineScope.launch(Dispatchers.IO) {
                                 noteStorageManager.saveNote(updated, noteStrokes[noteId] ?: emptyList(), zoomScale)
                             }
-                            handwritingSearchManager.indexNoteAsync(noteId, updated.folderId, noteStrokes[noteId] ?: emptyList())
                             updated
                         } else note
                     }

@@ -250,7 +250,7 @@ class SketchCanvasView @JvmOverloads constructor(
         renderer.viewOffsetX = newOffsetX
         renderer.viewOffsetY = newOffsetY
         renderer.isFboDirty = true
-        scheduleRedrawFrames(2)
+        scheduleRedrawFrames(1)
         syncCurrentPageStateFromRenderer()
     }
 
@@ -2312,7 +2312,7 @@ class SketchCanvasView @JvmOverloads constructor(
     fun requestRedraw() {
         renderer.isInteractiveGesture = false
         renderer.markDirty()
-        scheduleRedrawFrames(3)
+        scheduleRedrawFrames(1)
     }
 
     fun scheduleRedrawFrames(count: Int = 3) {

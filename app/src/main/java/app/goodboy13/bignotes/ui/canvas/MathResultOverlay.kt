@@ -35,7 +35,7 @@ import app.goodboy13.bignotes.ui.theme.rememberReducedMotion
 fun MathResultOverlay(
     overlayState: MathOverlayState?,
     canvasView: SketchCanvasView?,
-    viewportTick: Int,
+    viewportTickProvider: () -> Int,
     onInsertAnswer: () -> Unit,
     onCopyAnswer: () -> Unit,
     onDismiss: () -> Unit,
@@ -53,7 +53,7 @@ fun MathResultOverlay(
     if (activeState == null || canvasView == null) return
 
     @Suppress("UNUSED_VARIABLE")
-    val tick = viewportTick
+    val tick = viewportTickProvider()
     val density = LocalDensity.current
     val screenConfig = LocalConfiguration.current
 

@@ -57,7 +57,7 @@ private sealed class ImageGestureState {
 fun ImageManipulationOverlay(
     selectedImage: CanvasImage?,
     canvasView: SketchCanvasView?,
-    viewportTick: Int,
+    viewportTickProvider: () -> Int,
     onUpdateImageLive: (CanvasImage) -> Unit,
     onUpdateImage: (previous: CanvasImage, current: CanvasImage) -> Unit,
     onDeleteImage: (CanvasImage) -> Unit,
@@ -71,7 +71,7 @@ fun ImageManipulationOverlay(
     val currentCanvasView by rememberUpdatedState(canvasView)
 
     @Suppress("UNUSED_VARIABLE")
-    val tick = viewportTick
+    val tick = viewportTickProvider()
 
     var isCropMode by remember { mutableStateOf(false) }
     var dragMode by remember { mutableStateOf(DragMode.NONE) }
