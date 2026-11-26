@@ -91,6 +91,9 @@ class BlitShader {
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textureId)
         GLES30.glUniform1i(uTextureLocation, 0)
 
+        // Ensure no stale VBO from stroke/grid rendering stays bound when reading client vertex pointers
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+
         quadVertices.position(0)
         quadVertices.put(x0).put(y0).put(0.0f).put(0.0f)
         quadVertices.put(x1).put(y0).put(1.0f).put(0.0f)
@@ -106,9 +109,9 @@ class BlitShader {
         GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 4 * 4, quadVertices)
         GLES30.glEnableVertexAttribArray(1)
 
-        GLES30.glDisableVertexAttribArray(2)
-        GLES30.glDisableVertexAttribArray(3)
-        GLES30.glDisableVertexAttribArray(4)
+        for (attr in 2..7) {
+            GLES30.glDisableVertexAttribArray(attr)
+        }
 
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
 

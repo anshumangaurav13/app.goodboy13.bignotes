@@ -47,12 +47,30 @@ class SketchCanvasRenderer(
 
     @Volatile
     var gridConfig: GridConfig = GridConfig()
+        set(value) {
+            if (field != value) {
+                field = value
+                isFboDirty = true
+            }
+        }
 
 
     @Volatile
     var showPageSeparators: Boolean = true
+        set(value) {
+            if (field != value) {
+                field = value
+                isFboDirty = true
+            }
+        }
     @Volatile
     var worldPageHeight: Float = 1698.15f
+        set(value) {
+            if (field != value) {
+                field = value
+                isFboDirty = true
+            }
+        }
 
     var currentTone: PencilTone = PencilTone.SOFT
     var currentColorRgb: Long = PencilTone.SOFT.colorRgb
@@ -127,6 +145,10 @@ class SketchCanvasRenderer(
     var fboRotation: Float = 0f
     @Volatile
     var fboFlipped: Boolean = false
+    @Volatile
+    var fboRenderedWidth: Int = 0
+    @Volatile
+    var fboRenderedHeight: Int = 0
     @Volatile
     var isFboDirty: Boolean = true
 
@@ -635,13 +657,15 @@ class SketchCanvasRenderer(
                 GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
                 return
             }
-            // Prime the front buffer with paper, grid, images, and committed strokes
-            renderSceneBackground(
-                width.toFloat(),
-                height.toFloat(),
-                frontBufferMvpMatrix,
-                currentWorldToViewMatrix
-            )
+            // Prime the front buffer from cached FBO in a single quad when valid, avoiding full-scene re-draw on every ACTION_DOWN
+            if (!blitOrRefreshCommittedFbo(width, height, bufferInfo.width, bufferInfo.height, screenProjectionMatrix, allowInteractiveWarp = false)) {
+                renderSceneBackground(
+                    width.toFloat(),
+                    height.toFloat(),
+                    frontBufferMvpMatrix,
+                    currentWorldToViewMatrix
+                )
+            }
         }
         if (!hasRawSegments && !hasRawDabs && !hasListDabs) return
 
@@ -732,12 +756,15 @@ class SketchCanvasRenderer(
 
         Matrix.multiplyMM(directScreenMvpMatrix, 0, screenProjectionMatrix, 0, currentWorldToViewMatrix, 0)
 
-        renderSceneBackground(
-            width.toFloat(),
-            height.toFloat(),
-            directScreenMvpMatrix,
-            currentWorldToViewMatrix
-        )
+        if (!blitOrRefreshCommittedFbo(width, height, bufferInfo.width, bufferInfo.height, screenProjectionMatrix, allowInteractiveWarp = isInteractiveGesture)) {
+            renderSceneBackground(
+                width.toFloat(),
+                height.toFloat(),
+                directScreenMvpMatrix,
+                currentWorldToViewMatrix
+            )
+            isFboDirty = true
+        }
 
         // 5. Render lasso-selected strokes directly with real-time translation offset
         if (selectedStrokes.isNotEmpty()) {
@@ -773,13 +800,119 @@ class SketchCanvasRenderer(
             }
         }
 
-        // Keep FBO dirty flag updated so eyedropper tool refreshes if used
-        isFboDirty = true
-
         val err = GLES30.glGetError()
         if (err != GLES30.GL_NO_ERROR) {
             android.util.Log.e("SketchCanvasRenderer", "GL Error in onDrawMultiBufferedLayer: $err")
         }
+    }
+
+    /**
+     * Checks whether the cached overscan FBO accurately covers the current viewport and blits it
+     * in a single textured quad; otherwise refreshes committedFbo once and blits it.
+     * Returns false only if FBO resources or matrix inversion are unavailable.
+     */
+    private fun blitOrRefreshCommittedFbo(
+        viewWidth: Int,
+        viewHeight: Int,
+        bufferWidth: Int,
+        bufferHeight: Int,
+        targetScreenProjection: FloatArray,
+        allowInteractiveWarp: Boolean
+    ): Boolean {
+        val fbo = committedFbo ?: return false
+        val blit = blitShader ?: return false
+        if (fbo.fboId == 0 || fbo.width <= 0 || fbo.height <= 0 || viewWidth <= 0 || viewHeight <= 0) {
+            return false
+        }
+
+        if (!canBlitCommittedFbo(fbo, viewWidth, viewHeight, allowInteractiveWarp)) {
+            renderCommittedFbo(viewWidth, viewHeight)
+            GLES30.glViewport(0, 0, bufferWidth, bufferHeight)
+            if (isFboDirty || !Matrix.invertM(invFboWorldToViewMatrix, 0, fboWorldToViewMatrix, 0)) {
+                return false
+            }
+        }
+
+        val offsetX = (fbo.width - fboRenderedWidth) * 0.5f
+        val offsetY = (fbo.height - fboRenderedHeight) * 0.5f
+
+        Matrix.multiplyMM(affineMatrix, 0, currentWorldToViewMatrix, 0, invFboWorldToViewMatrix, 0)
+        Matrix.multiplyMM(finalBlitMatrix, 0, targetScreenProjection, 0, affineMatrix, 0)
+
+        blit.blit(
+            textureId = fbo.textureId,
+            transformMatrix = finalBlitMatrix,
+            x0 = -offsetX,
+            y0 = -offsetY,
+            x1 = fboRenderedWidth.toFloat() + offsetX,
+            y1 = fboRenderedHeight.toFloat() + offsetY,
+            enableBlend = false
+        )
+        return true
+    }
+
+    private fun canBlitCommittedFbo(
+        fbo: FboLayer,
+        viewWidth: Int,
+        viewHeight: Int,
+        allowInteractiveWarp: Boolean
+    ): Boolean {
+        if (isFboDirty) return false
+        if (fboRenderedWidth != viewWidth || fboRenderedHeight != viewHeight) return false
+        if (isFlippedHorizontal != fboFlipped) return false
+
+        val fboEffScale = fboZoom * fboPageScale
+        val curEffScale = zoomScale * pageScale
+        val scaleRatio = if (fboEffScale > 1e-4f) curEffScale / fboEffScale else 1f
+        val rotDiff = kotlin.math.abs(rotationDegrees - fboRotation)
+
+        if (!allowInteractiveWarp) {
+            // Static / pen-down frame: require pixel-aligned 1:1 match to preserve crisp vector edges
+            return scaleRatio in 0.998f..1.002f &&
+                rotDiff < 0.01f &&
+                kotlin.math.abs(panX - fboPanX) < 0.05f &&
+                kotlin.math.abs(panY - fboPanY) < 0.05f &&
+                kotlin.math.abs(viewOffsetX - fboViewOffsetX) < 0.05f &&
+                kotlin.math.abs(viewOffsetY - fboViewOffsetY) < 0.05f
+        }
+
+        // Interactive pan/zoom/fling: reuse overscan FBO within comfortable sharpness & coverage bounds
+        if (scaleRatio < 0.65f || scaleRatio > 1.65f) return false
+        if (kotlin.math.abs(viewOffsetX - fboViewOffsetX) > 0.5f || kotlin.math.abs(viewOffsetY - fboViewOffsetY) > 0.5f) {
+            return false
+        }
+        if (!Matrix.invertM(invWorldToViewMatrix, 0, currentWorldToViewMatrix, 0)) return false
+
+        // Map current view corners [0..w, 0..h] into fbo view space via (fboWorldToView * inv(currentWorldToView))
+        Matrix.multiplyMM(affineMatrix, 0, fboWorldToViewMatrix, 0, invWorldToViewMatrix, 0)
+
+        val offsetX = (fbo.width - fboRenderedWidth) * 0.5f
+        val offsetY = (fbo.height - fboRenderedHeight) * 0.5f
+        val minAllowedX = -offsetX + 2f
+        val maxAllowedX = fboRenderedWidth.toFloat() + offsetX - 2f
+        val minAllowedY = -offsetY + 2f
+        val maxAllowedY = fboRenderedHeight.toFloat() + offsetY - 2f
+
+        val m00 = affineMatrix[0]
+        val m01 = affineMatrix[4]
+        val m03 = affineMatrix[12]
+        val m10 = affineMatrix[1]
+        val m11 = affineMatrix[5]
+        val m13 = affineMatrix[13]
+
+        val vw = viewWidth.toFloat()
+        val vh = viewHeight.toFloat()
+
+        for (cornerIdx in 0 until 4) {
+            val sx = if (cornerIdx == 1 || cornerIdx == 2) vw else 0f
+            val sy = if (cornerIdx >= 2) vh else 0f
+            val fx = m00 * sx + m01 * sy + m03
+            val fy = m10 * sx + m11 * sy + m13
+            if (fx < minAllowedX || fx > maxAllowedX || fy < minAllowedY || fy > maxAllowedY) {
+                return false
+            }
+        }
+        return true
     }
 
     /**
@@ -935,6 +1068,8 @@ class SketchCanvasRenderer(
         fboPageScale = pageScale
         fboRotation = rotationDegrees
         fboFlipped = isFlippedHorizontal
+        fboRenderedWidth = width
+        fboRenderedHeight = height
         isFboDirty = false
     }
 
