@@ -368,7 +368,9 @@ fun BigNotesMainScreen(
             }
         )
     }
-    var strokeSize by remember { mutableFloatStateOf(5.0f) }
+    var strokeSize by remember {
+        mutableFloatStateOf(prefs.getFloat("stroke_size", 5.0f).coerceIn(0.5f, 50f))
+    }
     var eraserRadius by remember { mutableFloatStateOf(prefs.getFloat("eraser_radius", 36f)) }
     var zoomScale by remember { mutableFloatStateOf(1.0f) }
     var canUndo by remember { mutableStateOf(false) }
@@ -1248,6 +1250,7 @@ fun BigNotesMainScreen(
             onStrokeSizeChange = { newSize ->
                 strokeSize = newSize
                 canvasView?.renderer?.currentBaseWidth = newSize
+                prefs.edit().putFloat("stroke_size", newSize).apply()
             },
             eraserRadius = eraserRadius,
             onEraserRadiusChange = { newRadius ->
